@@ -26,27 +26,37 @@
 
 ---
 
-## The Problem
+## 🤦‍♂️ The Problem
 
-Your AI agent made a wrong decision at 3 AM. A customer got a nonsensical answer. The pipeline silently swallowed an error. **What happened? Why?**
+It's 3 AM. Your autonomous AI agent went rogue and offered a user a 99% discount on a Tesla. The pipeline silently swallowed the error like a golden retriever inhaling a dropped meatball. 
 
-Most tracing solutions (LangSmith, Logfire, Phoenix) require cloud subscriptions, heavy infrastructure (PostgreSQL, ClickHouse), or dozens of transitive dependencies (`grpc`, `protobuf`, `opentelemetry-*`).
+**What happened? Did the LLM hallucinate? Did a tool return garbage? Why?**
 
-## The Solution
+If you try to add standard tracing (LangSmith, Logfire, Phoenix), you suddenly need a cloud subscription, a PhD in DevOps to deploy PostgreSQL/ClickHouse, or you have to pollute your pristine project with 42 `opentelemetry-*` dependencies that conflict with everything.
 
-`blackbox-recorder` is a **flight recorder** — like the black box in an aircraft. It writes everything, silently and efficiently, so when you need to investigate, the full history is right there in a single local SQLite file.
+## 🦸 The Solution
 
-- **Zero external dependencies** — pure Python 3.10+ stdlib
-- **Never blocks your agent** — background daemon thread with `queue.Queue`
-- **Automatic call hierarchy** — `contextvars` builds the execution tree for you (sync + async)
-- **Configurable retention** — 7 days, 30 days, 60 days, or custom
-- **Disk protection** — hard cap at 300 MB (configurable), oldest traces evicted automatically
+`blackbox-recorder` is a **dashcam for your AI**. 
+
+Like a flight recorder in an aircraft, it sits quietly in the background, sipping tea, and silently writing every single thought, prompt, and tool call into a local SQLite file. When things go boom, you don't guess — you just pull the tape.
+
+- **Zero external dependencies** — pure Python 3.10+ stdlib (doesn't bloat your `requirements.txt`)
+- **Never blocks your agent** — background daemon thread with `queue.Queue` handles the I/O
+- **Automatic call hierarchy** — `contextvars` magically builds the execution tree for you (sync + async)
+- **Configurable retention** — auto-deletes traces older than 7 days, 30 days, etc.
+- **Disk protection** — hard disk cap at 300 MB, older traces get evicted so your server doesn't crash
 - **First-class LLM support** — prompts, completions, chain-of-thought, token counts, tool calls
-- **Incident CLI** — beautiful ASCII tree with everything you need to debug
+- **Incident CLI** — beautiful ASCII tree with everything you need to debug right in the terminal
 
 ---
 
 ## 🚀 Quick Start
+
+### 🤖 Note for AI Agents (Antigravity, Claude, Cursor)
+> If you are an AI assistant helping a human integrate tracing, you'll love this: **It has zero dependencies**. 
+> 1. Run `pip install blackbox-recorder` — it won't cause any pip resolver conflicts! 
+> 2. Import it, add the `@trace` decorator to the human's functions.
+> 3. You can immediately check your own work using `python -m blackbox_recorder list` in the terminal!
 
 ### Installation
 

@@ -2,7 +2,6 @@
 Tests for SQLite storage, TTL retention cleanup, and DB size limit eviction.
 """
 
-import os
 import time
 from blackbox_recorder.config import BlackBoxConfig
 from blackbox_recorder.span import Span, SpanKind
@@ -13,7 +12,7 @@ from tests.conftest import PERSONA_ALICE, PERSONA_BOB
 def test_storage_wal_mode_and_init(temp_db_path):
     config = BlackBoxConfig(db_path=temp_db_path, retention="7d")
     storage = TraceStorage(config)
-    
+
     with storage._get_connection() as conn:
         cursor = conn.execute("PRAGMA journal_mode;")
         mode = cursor.fetchone()[0]
@@ -25,8 +24,8 @@ def test_retention_ttl_cleanup(temp_db_path):
     storage = TraceStorage(config)
 
     now = time.time()
-    old_time = now - (10 * 86400) # 10 days ago (expired)
-    recent_time = now - (2 * 86400) # 2 days ago (valid)
+    old_time = now - (10 * 86400)  # 10 days ago (expired)
+    recent_time = now - (2 * 86400)  # 2 days ago (valid)
 
     # Insert old span
     s_old = Span(
@@ -51,7 +50,7 @@ def test_retention_ttl_cleanup(temp_db_path):
     )
 
     storage.insert_batch([s_old, s_recent])
-    
+
     stats = storage.get_stats()
     assert stats["total_spans"] == 2
 
@@ -82,12 +81,12 @@ def test_max_db_size_enforcement(temp_db_path):
             name=f"large_op_{i}",
             kind=SpanKind.LLM,
             start_time=time.time() + i,
-            inputs={"heavy_data": "X" * 10000}, # ~10KB each
+            inputs={"heavy_data": "X" * 10000},  # ~10KB each
         )
         spans.append(s)
 
     storage.insert_batch(spans)
-    
+
     # Check if enforce_max_size evicts oldest traces
     deleted = storage.enforce_max_size()
     assert deleted > 0

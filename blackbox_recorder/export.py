@@ -59,7 +59,7 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
     # Build parent -> children map
     span_map = {s["span_id"]: s for s in spans}
     children_map: Dict[Optional[str], List[str]] = {}
-    
+
     for s in spans:
         p_id = s.get("parent_span_id")
         if p_id not in children_map:
@@ -88,7 +88,10 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
     lines.append(f"📦 Trace ID: {root_trace_id}")
     lines.append(f"⏱️  Total Spans: {len(spans)}")
     if total_prompt_tokens or total_completion_tokens:
-        lines.append(f"🔤 Tokens: {total_prompt_tokens} in → {total_completion_tokens} out ({total_prompt_tokens + total_completion_tokens} total)")
+        total_tokens = total_prompt_tokens + total_completion_tokens
+        lines.append(
+            f"🔤 Tokens: {total_prompt_tokens} in → {total_completion_tokens} out ({total_tokens} total)"
+        )
     if total_errors:
         lines.append(f"❌ Errors: {total_errors}")
     lines.append("─" * 70)
@@ -182,13 +185,16 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
                     tool_name = meta.get("tool_name", "")
                     if tool_name:
                         lines.append(f"{child_prefix}🔧 Tool: {tool_name}")
-                    lines.append(f"{child_prefix}📥 Args: {_truncate(json.dumps(inputs, default=str, ensure_ascii=False), 400)}")
+                    formatted_args = _truncate(json.dumps(inputs, default=str, ensure_ascii=False), 400)
+                    lines.append(f"{child_prefix}📥 Args: {formatted_args}")
                 if outputs:
-                    lines.append(f"{child_prefix}📤 Result: {_truncate(json.dumps(outputs, default=str, ensure_ascii=False), 400)}")
+                    formatted_res = _truncate(json.dumps(outputs, default=str, ensure_ascii=False), 400)
+                    lines.append(f"{child_prefix}📤 Result: {formatted_res}")
             elif kind == "AGENT":
                 # Agent reasoning inputs/outputs
                 if inputs:
-                    lines.append(f"{child_prefix}📥 Input: {_truncate(json.dumps(inputs, default=str, ensure_ascii=False), 400)}")
+                    formatted_input = _truncate(json.dumps(inputs, default=str, ensure_ascii=False), 400)
+                    lines.append(f"{child_prefix}📥 Input: {formatted_input}")
                 if isinstance(outputs, dict) and outputs.get("thinking"):
                     lines.append(f"{child_prefix}🧠 Reasoning: {_truncate(str(outputs['thinking']), 500)}")
                 if outputs:
@@ -196,13 +202,16 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
                     if isinstance(outputs, dict) and "thinking" in outputs:
                         out_str = {k: v for k, v in outputs.items() if k != "thinking"}
                     if out_str:
-                        lines.append(f"{child_prefix}📤 Output: {_truncate(json.dumps(out_str, default=str, ensure_ascii=False), 400)}")
+                        formatted_out = _truncate(json.dumps(out_str, default=str, ensure_ascii=False), 400)
+                        lines.append(f"{child_prefix}📤 Output: {formatted_out}")
             else:
                 # Generic spans
                 if inputs:
-                    lines.append(f"{child_prefix}📥 Input: {_truncate(json.dumps(inputs, default=str, ensure_ascii=False), 300)}")
+                    formatted_input = _truncate(json.dumps(inputs, default=str, ensure_ascii=False), 300)
+                    lines.append(f"{child_prefix}📥 Input: {formatted_input}")
                 if outputs:
-                    lines.append(f"{child_prefix}📤 Output: {_truncate(json.dumps(outputs, default=str, ensure_ascii=False), 300)}")
+                    formatted_output = _truncate(json.dumps(outputs, default=str, ensure_ascii=False), 300)
+                    lines.append(f"{child_prefix}📤 Output: {formatted_output}")
 
         children = children_map.get(span_id, [])
         for i, child_id in enumerate(children):

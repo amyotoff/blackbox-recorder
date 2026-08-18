@@ -5,7 +5,6 @@ Provides @trace decorator, context manager, and non-blocking background queue.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import contextvars
 import functools
@@ -22,7 +21,9 @@ from blackbox_recorder.storage import TraceStorage
 # Context variables for automatic hierarchy tracking across sync & async
 _CURRENT_SPAN: contextvars.ContextVar[Optional[Span]] = contextvars.ContextVar("blackbox_current_span", default=None)
 _CURRENT_TRACE_ID: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("blackbox_current_trace_id", default=None)
-_CURRENT_SESSION_ID: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("blackbox_current_session_id", default=None)
+_CURRENT_SESSION_ID: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "blackbox_current_session_id", default=None
+)
 
 
 class Tracer:
@@ -36,7 +37,7 @@ class Tracer:
         self._queue: queue.Queue[Optional[Span]] = queue.Queue()
         self._stop_event = threading.Event()
         self._last_cleanup = time.time()
-        
+
         # Start non-blocking daemon worker thread
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="blackbox-worker")
         self._worker_thread.start()

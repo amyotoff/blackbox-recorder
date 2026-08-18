@@ -29,7 +29,7 @@ class BlackBoxConfig:
         """Parse human-friendly retention string or int to days."""
         if isinstance(self.retention, int):
             return max(1, self.retention)
-        
+
         val = str(self.retention).strip().lower()
         if val in ("7d", "7days", "week", "1w", "1week"):
             return 7
