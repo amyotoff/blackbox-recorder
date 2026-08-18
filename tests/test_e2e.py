@@ -23,9 +23,10 @@ class TestE2ECLI(unittest.TestCase):
             f.write(f"""
 import sys
 import time
-from blackbox_recorder import tracer, SpanKind
+from blackbox_recorder import Tracer, BlackBoxConfig, SpanKind
 
-tracer.config.db_path = '{self.db_path}'
+config = BlackBoxConfig(db_path='{self.db_path}')
+tracer = Tracer(config)
 
 @tracer.trace("e2e_search", kind=SpanKind.TOOL)
 def mock_search(q):
