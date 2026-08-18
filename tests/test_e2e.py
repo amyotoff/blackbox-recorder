@@ -43,7 +43,7 @@ with tracer.span("e2e_root", kind=SpanKind.AGENT) as root:
             completion_tokens=5,
             model="gemini-e2e"
         )
-    
+
 tracer.flush()
 """)
 
@@ -66,7 +66,7 @@ tracer.flush()
                 if len(parts[-1]) >= 32:
                     trace_id = parts[-1]
                     break
-        
+
         self.assertIsNotNone(trace_id, "Could not find trace_id in CLI list output")
 
         # 3. Test CLI show verbose
@@ -80,6 +80,7 @@ tracer.flush()
         self.assertIn("💬 Prompt: Hello", res_show.stdout)
         self.assertIn("🧠 Thinking: Thinking about world...", res_show.stdout)
         self.assertIn("🤖 Response: World", res_show.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

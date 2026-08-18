@@ -7,10 +7,9 @@ import os
 import subprocess
 import sys
 import time
-from blackbox_recorder.export import export_all_to_jsonl, export_trace_to_jsonl, render_trace_tree
+from blackbox_recorder.export import export_trace_to_jsonl, render_trace_tree
 from blackbox_recorder.span import Span, SpanKind
 from blackbox_recorder.storage import TraceStorage
-from tests.conftest import PERSONA_ALICE
 
 
 def test_tree_rendering():
@@ -81,7 +80,14 @@ def test_cli_subcommands(temp_db_path):
     storage = TraceStorage(BlackBoxConfig(db_path=temp_db_path))
 
     now = time.time()
-    s = Span(trace_id="trace_cli_test", span_id="s_root", name="cli_agent", kind=SpanKind.AGENT, start_time=now - 2, end_time=now - 1)
+    s = Span(
+        trace_id="trace_cli_test",
+        span_id="s_root",
+        name="cli_agent",
+        kind=SpanKind.AGENT,
+        start_time=now - 2,
+        end_time=now - 1,
+    )
     storage.insert_batch([s])
 
     env = os.environ.copy()

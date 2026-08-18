@@ -2,7 +2,6 @@
 Tests for core Tracer functionality (synchronous, context manager, hierarchy).
 """
 
-import time
 import pytest
 from blackbox_recorder.span import SpanKind
 from tests.conftest import PERSONA_ALICE, PERSONA_BOB, PERSONA_BENDER
@@ -53,7 +52,7 @@ def test_automatic_nested_hierarchy(test_tracer):
     test_tracer.flush()
     traces = test_tracer.storage.list_traces(session_id=PERSONA_ALICE["tg_id"])
     assert len(traces) == 1
-    
+
     spans = test_tracer.storage.get_trace(traces[0]["trace_id"])
     assert len(spans) == 3
 
@@ -72,7 +71,7 @@ def test_context_manager_span(test_tracer):
 
     with test_tracer.span("bob_pipeline", kind=SpanKind.CHAIN) as root:
         root.set_metadata("user", PERSONA_BOB["username"])
-        
+
         with test_tracer.span("inner_step", kind=SpanKind.RETRIEVER) as child:
             child.set_metric("tokens", 150)
             child.finish(output={"status": "found 3 docs"})
