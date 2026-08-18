@@ -22,12 +22,12 @@ class TraceStorage:
     def __init__(self, config: Optional[BlackBoxConfig] = None):
         self.config = config or BlackBoxConfig()
         self.db_path = self.config.db_path
-        
+
         # Ensure parent directory exists
         db_dir = os.path.dirname(os.path.abspath(self.db_path))
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
-            
+
         self._init_db()
         self.cleanup_all()
 
@@ -82,7 +82,7 @@ class TraceStorage:
             val = json.dumps(obj, default=str, ensure_ascii=False)
         except Exception:
             val = str(obj)
-            
+
         if len(val) > self.config.max_field_chars:
             val = val[: self.config.max_field_chars] + "... [TRUNCATED]"
         return val
@@ -153,7 +153,7 @@ class TraceStorage:
             cursor = conn.execute("DELETE FROM spans WHERE created_at < ?", (cutoff,))
             deleted = cursor.rowcount
             conn.execute("COMMIT;")
-            
+
             if deleted > 0:
                 conn.execute("PRAGMA incremental_vacuum;")
                 try:
@@ -210,7 +210,7 @@ class TraceStorage:
                 )
                 deleted_rows = del_cursor.rowcount
                 conn.execute("COMMIT;")
-                
+
                 total_deleted += deleted_rows
 
                 conn.execute("PRAGMA incremental_vacuum;")
@@ -218,7 +218,7 @@ class TraceStorage:
                     conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
                 except Exception:
                     pass
-                
+
                 current_size = self.get_total_db_size_bytes()
                 if deleted_rows == 0:
                     break
@@ -241,12 +241,12 @@ class TraceStorage:
         try:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""
-            SELECT * FROM spans 
-            WHERE trace_id = ? 
+            SELECT * FROM spans
+            WHERE trace_id = ?
             ORDER BY start_time ASC
             """, (trace_id,))
             rows = cursor.fetchall()
-            
+
             result = []
             for r in rows:
                 item = dict(r)
@@ -270,7 +270,7 @@ class TraceStorage:
     ) -> List[Dict[str, Any]]:
         """List distinct traces with aggregated metadata."""
         query = """
-        SELECT 
+        SELECT
             trace_id,
             session_id,
             MIN(start_time) as start_time,
@@ -279,8 +279,8 @@ class TraceStorage:
             COUNT(span_id) as span_count,
             SUM(has_error) as error_count,
             (
-                SELECT name FROM spans s2 
-                WHERE s2.trace_id = spans.trace_id AND s2.parent_span_id IS NULL 
+                SELECT name FROM spans s2
+                WHERE s2.trace_id = spans.trace_id AND s2.parent_span_id IS NULL
                 LIMIT 1
             ) as root_name
         FROM spans
@@ -316,7 +316,7 @@ class TraceStorage:
         conn = self._get_connection()
         try:
             cursor = conn.execute("""
-            SELECT 
+            SELECT
                 COUNT(span_id) as total_spans,
                 COUNT(DISTINCT trace_id) as total_traces,
                 SUM(has_error) as total_errors,

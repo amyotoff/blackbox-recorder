@@ -5,7 +5,6 @@ Data models and Span representation for blackbox-recorder.
 from __future__ import annotations
 
 import dataclasses
-import json
 import time
 import uuid
 from enum import Enum
@@ -17,7 +16,7 @@ class SpanKind(str, Enum):
     AGENT = "AGENT"         # Root orchestrator / reasoning agent loop
     LLM = "LLM"             # LLM API invocation (prompt + completion)
     TOOL = "TOOL"           # Tool / Function execution
-    RETRIEVER = "RETRIEVER" # Vector DB / Search / RAG retriever
+    RETRIEVER = "RETRIEVER"  # Vector DB / Search / RAG retriever
     CHAIN = "CHAIN"         # Deterministic multi-step workflow / step
 
     def __str__(self) -> str:

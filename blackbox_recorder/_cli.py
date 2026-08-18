@@ -26,7 +26,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
     config = BlackBoxConfig(db_path=args.db)
     storage = TraceStorage(config)
     stats = storage.get_stats()
-    
+
     print("\n📊 BlackBox Recorder — Statistics")
     print("═" * 45)
     print(f"📁 Database Path:    {stats['db_path']}")
@@ -43,10 +43,10 @@ def cmd_stats(args: argparse.Namespace) -> None:
 def cmd_list(args: argparse.Namespace) -> None:
     config = BlackBoxConfig(db_path=args.db)
     storage = TraceStorage(config)
-    
+
     has_error = True if args.errors_only else None
     traces = storage.list_traces(limit=args.limit, session_id=args.session, has_error=has_error)
-    
+
     if not traces:
         print("\n🔍 No traces found.")
         return
@@ -55,7 +55,7 @@ def cmd_list(args: argparse.Namespace) -> None:
     print("─" * 85)
     print(f"{'Start Time':<20} {'Status':<7} {'Spans':<7} {'Duration':<10} {'Root Operation':<20} {'Trace ID'}")
     print("─" * 85)
-    
+
     for t in traces:
         status = "❌ ERR" if t.get("error_count") and t["error_count"] > 0 else "✅ OK"
         time_str = _format_time(t["start_time"])
@@ -69,7 +69,7 @@ def cmd_show(args: argparse.Namespace) -> None:
     config = BlackBoxConfig(db_path=args.db)
     storage = TraceStorage(config)
     spans = storage.get_trace(args.trace_id)
-    
+
     if not spans:
         print(f"\n❌ Trace '{args.trace_id}' not found.")
         return
@@ -103,13 +103,16 @@ def cmd_cleanup(args: argparse.Namespace) -> None:
         config.retention = args.retention
     storage = TraceStorage(config)
     res = storage.cleanup_all()
-    print(f"🧹 Cleanup complete. Deleted {res['ttl_deleted']} expired spans (TTL) and {res['size_deleted']} spans (size limit).")
+    print(
+        f"🧹 Cleanup complete. Deleted {res['ttl_deleted']} expired spans (TTL) "
+        f"and {res['size_deleted']} spans (size limit)."
+    )
 
 
 def cmd_export(args: argparse.Namespace) -> None:
     config = BlackBoxConfig(db_path=args.db)
     storage = TraceStorage(config)
-    
+
     if args.trace:
         count = export_trace_to_jsonl(storage, args.trace, args.output)
         print(f"💾 Exported {count} spans for trace {args.trace} to {args.output}")
@@ -124,7 +127,7 @@ def main() -> None:
         description="🛫 BlackBox Recorder — AI Agent Incident Flight Recorder",
     )
     parser.add_argument("--db", default="blackbox_traces.db", help="Path to SQLite trace database")
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to execute")
 
     # stats
