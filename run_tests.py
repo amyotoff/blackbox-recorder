@@ -232,4 +232,14 @@ class TestBlackBoxRecorder(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    # Also load the E2E tests
+    import tests.test_e2e
+    
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    suite.addTests(loader.loadTestsFromTestCase(TestBlackBoxRecorder))
+    suite.addTests(loader.loadTestsFromModule(tests.test_e2e))
+    
+    runner = unittest.TextTestRunner(verbosity=2)
+    runner.run(suite)
+
