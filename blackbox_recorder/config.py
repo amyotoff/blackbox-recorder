@@ -23,6 +23,8 @@ class BlackBoxConfig:
     capture_inputs: bool = True             # Record function inputs
     capture_outputs: bool = True            # Record function return values
     max_field_chars: int = 100_000          # Safeguard character cap for single payload
+    record_open_spans: bool = True          # Write spans on start so a hard crash still leaves a record
+    flush_timeout_seconds: float = 5.0      # Max wait for the queue to drain on close() / interpreter exit
 
     @property
     def retention_days(self) -> int:

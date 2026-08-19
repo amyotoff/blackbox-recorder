@@ -10,6 +10,8 @@ from blackbox_recorder.span import Span, SpanKind
 from blackbox_recorder.storage import TraceStorage
 from blackbox_recorder.tracer import (
     Tracer,
+    configure,
+    get_tracer,
     set_session_id,
     set_trace_id,
     span,
@@ -17,11 +19,13 @@ from blackbox_recorder.tracer import (
     tracer,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "tracer",
     "Tracer",
+    "configure",
+    "get_tracer",
     "trace",
     "span",
     "Span",

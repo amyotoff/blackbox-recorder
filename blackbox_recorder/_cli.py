@@ -34,6 +34,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
     print(f"📦 Total Traces:     {stats['total_traces']}")
     print(f"⏱️ Total Spans:      {stats['total_spans']}")
     print(f"❌ Total Errors:     {stats['total_errors']}")
+    print(f"⏳ Unfinished Spans: {stats['total_incomplete']}")
     print(f"⏳ Retention (TTL):  {stats['retention_days']} days")
     print(f"🗓️ Oldest Trace:     {_format_time(stats['oldest_timestamp'])}")
     print(f"🗓️ Newest Trace:     {_format_time(stats['newest_timestamp'])}")
@@ -57,7 +58,12 @@ def cmd_list(args: argparse.Namespace) -> None:
     print("─" * 85)
 
     for t in traces:
-        status = "❌ ERR" if t.get("error_count") and t["error_count"] > 0 else "✅ OK"
+        if t.get("error_count"):
+            status = "❌ ERR"
+        elif t.get("incomplete_count"):
+            status = "⏳ OPEN"
+        else:
+            status = "✅ OK"
         time_str = _format_time(t["start_time"])
         duration_str = f"{t.get('duration_ms', 0)}ms"
         root_name = (t.get("root_name") or "unnamed")[:18]

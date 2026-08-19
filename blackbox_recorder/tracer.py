@@ -5,6 +5,7 @@ Provides @trace decorator, context manager, and non-blocking background queue.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import contextvars
 import functools
@@ -12,6 +13,7 @@ import inspect
 import queue
 import threading
 import time
+import weakref
 from typing import Any, Callable, Dict, Iterator, List, Optional, Union
 
 from blackbox_recorder.config import BlackBoxConfig
@@ -36,11 +38,15 @@ class Tracer:
         self.storage = TraceStorage(config=self.config)
         self._queue: queue.Queue[Optional[Span]] = queue.Queue()
         self._stop_event = threading.Event()
+        self._close_lock = threading.Lock()
+        self._closed = False
         self._last_cleanup = time.time()
 
         # Start non-blocking daemon worker thread
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="blackbox-worker")
         self._worker_thread.start()
+
+        _LIVE_TRACERS.add(self)
 
     def _worker_loop(self) -> None:
         """Background thread worker to flush queued spans to SQLite in batches."""
@@ -86,17 +92,36 @@ class Tracer:
                     pass
                 self._last_cleanup = now
 
-    def flush(self) -> None:
-        """Wait until all pending spans in the queue are written to SQLite."""
-        self._queue.join()
+    def flush(self, timeout: Optional[float] = None) -> bool:
+        """
+        Wait until all pending spans in the queue are written to SQLite.
 
-    def close(self) -> None:
-        """Gracefully stop worker thread and flush all data."""
-        self.flush()
+        Returns False if the wait timed out or the writer thread is gone — in
+        both cases some spans may still be unwritten.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._queue.all_tasks_done:
+            while self._queue.unfinished_tasks:
+                if not self._worker_thread.is_alive():
+                    return False
+                if deadline is not None and time.monotonic() >= deadline:
+                    return False
+                self._queue.all_tasks_done.wait(timeout=0.05)
+        return True
+
+    def close(self, timeout: Optional[float] = None) -> None:
+        """Gracefully stop worker thread and flush all data. Safe to call twice."""
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+
+        self.flush(timeout=self.config.flush_timeout_seconds if timeout is None else timeout)
         self._stop_event.set()
         self._queue.put(None)
         if self._worker_thread.is_alive():
             self._worker_thread.join(timeout=2.0)
+        _LIVE_TRACERS.discard(self)
 
     # ---------------- Context Helpers ----------------
 
@@ -153,6 +178,13 @@ class Tracer:
             trace_token = _CURRENT_TRACE_ID.set(span.trace_id)
 
         span_token = _CURRENT_SPAN.set(span)
+
+        if self.config.record_open_spans:
+            # Persist the span the moment it starts, with end_time still NULL.
+            # If the process is killed before the function returns, this row is
+            # what tells you where it died; the finished row replaces it by span_id.
+            self._queue.put(span.snapshot())
+
         return span, span_token, trace_token
 
     def _end_span(
@@ -179,60 +211,7 @@ class Tracer:
         Decorator to record execution of sync or async functions.
         """
         def decorator(func: Callable) -> Callable:
-            op_name = name or func.__name__
-
-            if inspect.iscoroutinefunction(func):
-                @functools.wraps(func)
-                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-                    if not self.config.enabled:
-                        return await func(*args, **kwargs)
-
-                    inputs_dict = self._extract_inputs(func, args, kwargs)
-                    span, span_token, trace_token = self._start_span(
-                        name=op_name,
-                        kind=kind,
-                        metadata=metadata,
-                        inputs=inputs_dict,
-                    )
-                    try:
-                        result = await func(*args, **kwargs)
-                        self._end_span(span, outputs=result)
-                        return result
-                    except Exception as exc:
-                        self._end_span(span, error=exc)
-                        raise
-                    finally:
-                        _CURRENT_SPAN.reset(span_token)
-                        if trace_token:
-                            _CURRENT_TRACE_ID.reset(trace_token)
-
-                return async_wrapper
-            else:
-                @functools.wraps(func)
-                def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-                    if not self.config.enabled:
-                        return func(*args, **kwargs)
-
-                    inputs_dict = self._extract_inputs(func, args, kwargs)
-                    span, span_token, trace_token = self._start_span(
-                        name=op_name,
-                        kind=kind,
-                        metadata=metadata,
-                        inputs=inputs_dict,
-                    )
-                    try:
-                        result = func(*args, **kwargs)
-                        self._end_span(span, outputs=result)
-                        return result
-                    except Exception as exc:
-                        self._end_span(span, error=exc)
-                        raise
-                    finally:
-                        _CURRENT_SPAN.reset(span_token)
-                        if trace_token:
-                            _CURRENT_TRACE_ID.reset(trace_token)
-
-                return sync_wrapper
+            return _build_traced(func, lambda: self, name or func.__name__, kind, metadata)
 
         return decorator
 
@@ -271,7 +250,8 @@ class Tracer:
             if trace_token:
                 _CURRENT_TRACE_ID.reset(trace_token)
 
-    def _extract_inputs(self, func: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
+    @staticmethod
+    def _extract_inputs(func: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
         """Safely extract function arguments into key-value dictionary."""
         inputs: Dict[str, Any] = {}
         try:
@@ -288,9 +268,139 @@ class Tracer:
         return inputs
 
 
-# Global default instance for zero-config import
-tracer = Tracer()
-trace = tracer.trace
-span = tracer.span
-set_session_id = tracer.set_session_id
-set_trace_id = tracer.set_trace_id
+def _build_traced(
+    func: Callable,
+    resolve_tracer: Callable[[], Tracer],
+    op_name: str,
+    kind: Union[SpanKind, str],
+    metadata: Optional[Dict[str, Any]],
+) -> Callable:
+    """
+    Wrap func so every call is recorded by whatever tracer resolve_tracer returns.
+
+    The tracer is resolved per call rather than per decoration, so decorating a
+    function never forces the default tracer (and its database file) into
+    existence while the module is still being imported.
+    """
+    if inspect.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            recorder = resolve_tracer()
+            if not recorder.config.enabled:
+                return await func(*args, **kwargs)
+
+            inputs = recorder._extract_inputs(func, args, kwargs)
+            with recorder.span(op_name, kind=kind, metadata=metadata, inputs=inputs) as active:
+                result = await func(*args, **kwargs)
+                active.outputs = result
+                return result
+
+        return async_wrapper
+
+    @functools.wraps(func)
+    def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+        recorder = resolve_tracer()
+        if not recorder.config.enabled:
+            return func(*args, **kwargs)
+
+        inputs = recorder._extract_inputs(func, args, kwargs)
+        with recorder.span(op_name, kind=kind, metadata=metadata, inputs=inputs) as active:
+            result = func(*args, **kwargs)
+            active.outputs = result
+            return result
+
+    return sync_wrapper
+
+
+# ---------------- Default tracer (lazily created) ----------------
+
+_LIVE_TRACERS: "weakref.WeakSet[Tracer]" = weakref.WeakSet()
+_default_tracer: Optional[Tracer] = None
+_default_config: Optional[BlackBoxConfig] = None
+_default_lock = threading.Lock()
+
+
+def _flush_on_exit() -> None:
+    """Drain every live tracer before the interpreter tears down daemon threads."""
+    for recorder in list(_LIVE_TRACERS):
+        try:
+            recorder.close()
+        except Exception:
+            pass
+
+
+# Registering the hook is free; it opens no file and starts no thread.
+atexit.register(_flush_on_exit)
+
+
+def configure(config: BlackBoxConfig) -> None:
+    """
+    Set the configuration for the default tracer.
+
+    Call this before the first traced function runs. If the default tracer is
+    already running it is closed (flushing its buffer) and rebuilt on next use.
+    """
+    global _default_config, _default_tracer
+    with _default_lock:
+        _default_config = config
+        previous, _default_tracer = _default_tracer, None
+    if previous is not None:
+        previous.close()
+
+
+def get_tracer() -> Tracer:
+    """Return the process-wide default tracer, creating it on first use."""
+    global _default_tracer
+    if _default_tracer is None:
+        with _default_lock:
+            if _default_tracer is None:
+                _default_tracer = Tracer(config=_default_config)
+    return _default_tracer
+
+
+def trace(
+    name: Optional[str] = None,
+    kind: Union[SpanKind, str] = SpanKind.CHAIN,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Callable:
+    """Decorator recording sync or async calls into the default tracer."""
+    def decorator(func: Callable) -> Callable:
+        return _build_traced(func, get_tracer, name or func.__name__, kind, metadata)
+
+    return decorator
+
+
+def span(
+    name: str,
+    kind: Union[SpanKind, str] = SpanKind.CHAIN,
+    metadata: Optional[Dict[str, Any]] = None,
+    inputs: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Context manager recording a block into the default tracer."""
+    return get_tracer().span(name, kind=kind, metadata=metadata, inputs=inputs)
+
+
+# Context helpers touch only contextvars, so they need no tracer at all.
+set_session_id = Tracer.set_session_id
+set_trace_id = Tracer.set_trace_id
+
+
+class _DefaultTracerProxy:
+    """
+    Attribute-forwarding stand-in for the default tracer.
+
+    Keeps `from blackbox_recorder import tracer` free of side effects: the real
+    Tracer, its SQLite file and its worker thread appear on first attribute use.
+    """
+
+    __slots__ = ()
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(get_tracer(), item)
+
+    def __repr__(self) -> str:
+        state = "active" if _default_tracer is not None else "not started"
+        return f"<blackbox default tracer: {state}>"
+
+
+tracer = _DefaultTracerProxy()
