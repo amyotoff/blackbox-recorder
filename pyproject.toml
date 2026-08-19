@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-blackbox-recorder"
-version = "0.7.0"
+version = "0.8.0"
 description = "Universal, zero-dependency KISS flight recorder for AI agents"
 readme = "README.md"
 authors = [{ name = "BlackBox Contributors" }]

@@ -33,11 +33,59 @@ class TraceStorage:
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30.0, isolation_level=None)
+        # auto_vacuum has to be set before the database header exists. Switching the
+        # journal mode writes that header, so setting it afterwards is silently
+        # ignored and the file never hands freed pages back to the filesystem.
+        conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
-        conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
+
+    def _reclaim_free_pages(self, conn: sqlite3.Connection) -> None:
+        """
+        Hand pages freed by DELETE back to the filesystem.
+
+        `PRAGMA incremental_vacuum` releases one page per step, so a bare execute()
+        reclaims exactly one page and leaves the file at its high-water mark: it has
+        to be driven to completion. Even then some SQLite builds leave the freelist
+        populated, and there the only way to shrink the file is a full rewrite — so
+        check the result and fall back to VACUUM rather than let the size cap quietly
+        become unenforceable, which is what turns eviction into a total wipe.
+        """
+        try:
+            conn.execute("PRAGMA incremental_vacuum;").fetchall()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);").fetchall()
+            if conn.execute("PRAGMA freelist_count;").fetchone()[0] == 0:
+                return
+        except Exception:
+            return
+
+        try:
+            conn.execute("VACUUM;")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);").fetchall()
+        except Exception:
+            pass
+
+    def ensure_incremental_vacuum(self) -> bool:
+        """
+        Enable incremental auto-vacuum on a database that was created without it.
+
+        auto_vacuum can only be changed by rewriting the file, so this runs a one-off
+        VACUUM. Databases written before 0.8.0 have it disabled, and until it is on,
+        deleting traces frees nothing on disk. Returns True if a migration ran.
+        """
+        conn = self._get_connection()
+        try:
+            if conn.execute("PRAGMA auto_vacuum;").fetchone()[0] == 2:
+                return False
+            conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
+            conn.execute("VACUUM;")
+            return True
+        except Exception:
+            return False
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         conn = self._get_connection()
@@ -75,22 +123,82 @@ class TraceStorage:
         finally:
             conn.close()
 
+    @staticmethod
+    def _dumps(obj: Any) -> str:
+        try:
+            return json.dumps(obj, default=str, ensure_ascii=False)
+        except Exception:
+            return json.dumps(str(obj), ensure_ascii=False)
+
+    @staticmethod
+    def _middle_out(text: str, budget: int) -> str:
+        """
+        Drop the middle of a string and keep both ends.
+
+        Cutting only the tail throws away the end of the story — the final answer,
+        the last tool result, the exception that ended the run — which is usually
+        the reason someone opened the trace at all.
+        """
+        if len(text) <= budget:
+            return text
+        head = budget // 2
+        tail = budget - head
+        return f"{text[:head]}… [truncated: {len(text) - budget} chars] …{text[-tail:]}"
+
+    def _shrink_strings(self, obj: Any, budget: int) -> Any:
+        """Trim long strings wherever they sit, leaving the structure around them intact."""
+        if isinstance(obj, str):
+            return self._middle_out(obj, budget)
+        if isinstance(obj, dict):
+            return {k: self._shrink_strings(v, budget) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._shrink_strings(v, budget) for v in obj]
+        return obj
+
     def _serialize_field(self, obj: Any) -> Optional[str]:
+        """
+        Serialize a payload small enough to store, and still parseable afterwards.
+
+        Oversized payloads keep both ends, and the stored text stays valid JSON: a
+        field chopped mid-token used to come back from the database as a raw string
+        instead of the structure that was recorded.
+        """
         if obj is None:
             return None
-        try:
-            val = json.dumps(obj, default=str, ensure_ascii=False)
-        except Exception:
-            val = str(obj)
 
-        if len(val) > self.config.max_field_chars:
-            val = val[: self.config.max_field_chars] + "... [TRUNCATED]"
-        return val
+        cap = self.config.max_field_chars
+        val = self._dumps(obj)
+        if len(val) <= cap:
+            return val
+
+        # A few outsized strings inside a modest structure — the usual case for a
+        # long prompt or completion. Trim the strings, keep the shape readable.
+        val = self._dumps(self._shrink_strings(obj, max(1024, cap // 4)))
+        if len(val) <= cap:
+            return val
+
+        # Bulk rather than a few big values. Trim the document itself and store it
+        # as a JSON string, so a reader still gets valid JSON back. Escaping grows
+        # the result, so the budget is walked down until it fits.
+        budget = cap
+        candidate = self._dumps(self._middle_out(val, budget))
+        while len(candidate) > cap and budget > 256:
+            budget //= 2
+            candidate = self._dumps(self._middle_out(val, budget))
+        return candidate
 
     def get_total_db_size_bytes(self) -> int:
-        """Calculate total disk footprint including WAL and SHM files."""
+        """
+        Disk footprint of the recording: the database plus its write-ahead log.
+
+        The `-shm` file is deliberately left out. It is a fixed-size shared-memory
+        index that SQLite recreates whenever the database is opened, not recorded
+        data, and no amount of eviction frees it. Counting it charges every database
+        a constant overhead, which under a small size cap means eviction deletes the
+        entire history and is still over budget.
+        """
         total = 0
-        for path in (self.db_path, f"{self.db_path}-wal", f"{self.db_path}-shm"):
+        for path in (self.db_path, f"{self.db_path}-wal"):
             if os.path.exists(path):
                 total += os.path.getsize(path)
         return total
@@ -145,21 +253,30 @@ class TraceStorage:
             conn.close()
 
     def cleanup_ttl(self) -> int:
-        """Delete spans older than configured retention period."""
+        """
+        Delete traces whose spans have all aged past the retention period.
+
+        Retention is decided per trace, not per row. Expiring rows individually cuts
+        a trace in half at the cutoff and leaves children pointing at a parent that
+        no longer exists, which is unreadable as a tree; a trace instead survives
+        until its newest span expires.
+        """
         cutoff = int(time.time()) - (self.config.retention_days * 86400)
         conn = self._get_connection()
         try:
             conn.execute("BEGIN;")
-            cursor = conn.execute("DELETE FROM spans WHERE created_at < ?", (cutoff,))
+            cursor = conn.execute("""
+            DELETE FROM spans WHERE trace_id IN (
+                SELECT trace_id FROM spans
+                GROUP BY trace_id
+                HAVING MAX(created_at) < ?
+            )
+            """, (cutoff,))
             deleted = cursor.rowcount
             conn.execute("COMMIT;")
 
             if deleted > 0:
-                conn.execute("PRAGMA incremental_vacuum;")
-                try:
-                    conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
-                except Exception:
-                    pass
+                self._reclaim_free_pages(conn)
             return deleted
         except Exception:
             conn.execute("ROLLBACK;")
@@ -191,13 +308,21 @@ class TraceStorage:
                 pass
 
             while current_size > max_bytes:
+                total_traces = conn.execute("SELECT COUNT(DISTINCT trace_id) FROM spans").fetchone()[0]
+                if not total_traces:
+                    break
+
+                # Evict a slice of the oldest traces rather than a fixed 50: on a
+                # small database a fixed batch takes the whole history in one pass,
+                # leaving nothing to investigate with.
+                batch = max(1, min(50, total_traces // 10))
                 cursor = conn.execute("""
-                SELECT DISTINCT trace_id, MIN(start_time) as min_time
+                SELECT trace_id
                 FROM spans
                 GROUP BY trace_id
-                ORDER BY min_time ASC
-                LIMIT 50
-                """)
+                ORDER BY MIN(start_time) ASC
+                LIMIT ?
+                """, (batch,))
                 oldest_traces = [row[0] for row in cursor.fetchall()]
                 if not oldest_traces:
                     break
@@ -213,12 +338,7 @@ class TraceStorage:
 
                 total_deleted += deleted_rows
 
-                conn.execute("PRAGMA incremental_vacuum;")
-                try:
-                    conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
-                except Exception:
-                    pass
-
+                self._reclaim_free_pages(conn)
                 current_size = self.get_total_db_size_bytes()
                 if deleted_rows == 0:
                     break

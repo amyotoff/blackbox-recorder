@@ -108,6 +108,8 @@ def cmd_cleanup(args: argparse.Namespace) -> None:
     if args.retention:
         config.retention = args.retention
     storage = TraceStorage(config)
+    if storage.ensure_incremental_vacuum():
+        print("🗜️  Enabled incremental auto-vacuum (one-off rewrite of an older database).")
     res = storage.cleanup_all()
     print(
         f"🧹 Cleanup complete. Deleted {res['ttl_deleted']} expired spans (TTL) "

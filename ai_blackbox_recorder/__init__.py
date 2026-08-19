@@ -19,7 +19,7 @@ from ai_blackbox_recorder.tracer import (
     tracer,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "tracer",
