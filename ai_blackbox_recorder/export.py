@@ -1,5 +1,5 @@
 """
-Export utilities for blackbox-recorder (JSONL, OpenInference, ASCII trees).
+Export utilities for ai-blackbox-recorder (JSONL, OpenInference, ASCII trees).
 """
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.storage import TraceStorage
 
 
 def export_trace_to_jsonl(storage: TraceStorage, trace_id: str, output_file: str) -> int:

@@ -1,9 +1,9 @@
 """
-Basic synchronous agent example using blackbox-recorder.
+Basic synchronous agent example using ai-blackbox-recorder.
 """
 
 import time
-from blackbox_recorder import SpanKind, trace, tracer
+from ai_blackbox_recorder import SpanKind, trace, tracer
 
 
 @trace(name="calculator", kind=SpanKind.TOOL)
@@ -41,4 +41,4 @@ if __name__ == "__main__":
     # Wait for queue to flush to SQLite
     tracer.flush()
     print("\nTrace recorded successfully in blackbox_traces.db")
-    print("Run `python -m blackbox_recorder list` or `python -m blackbox_recorder stats` to inspect.")
+    print("Run `python -m ai_blackbox_recorder list` or `python -m ai_blackbox_recorder stats` to inspect.")

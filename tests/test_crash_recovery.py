@@ -12,11 +12,11 @@ import sys
 import tempfile
 import unittest
 
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.export import render_trace_tree
-from blackbox_recorder.span import SpanKind
-from blackbox_recorder.storage import TraceStorage
-from blackbox_recorder.tracer import Tracer
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.export import render_trace_tree
+from ai_blackbox_recorder.span import SpanKind
+from ai_blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.tracer import Tracer
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,7 +61,7 @@ class TestImportIsSideEffectFree(_ScriptRunner):
     def test_import_and_decoration_touch_no_disk(self):
         res = self._run("""
 import os
-from blackbox_recorder import trace, tracer, SpanKind
+from ai_blackbox_recorder import trace, tracer, SpanKind
 
 @trace(kind=SpanKind.TOOL)
 def never_called(x):
@@ -77,7 +77,7 @@ print("FILES:" + ",".join(sorted(os.listdir("."))))
     def test_first_traced_call_creates_the_database(self):
         self._run("""
 import os
-from blackbox_recorder import trace, tracer, SpanKind
+from ai_blackbox_recorder import trace, tracer, SpanKind
 
 @trace(name="calc", kind=SpanKind.TOOL)
 def add(a, b):
@@ -91,7 +91,7 @@ assert os.path.exists("blackbox_traces.db"), "first traced call did not create t
 
     def test_configure_before_first_use_wins(self):
         self._run(f"""
-from blackbox_recorder import BlackBoxConfig, configure, trace, tracer, SpanKind
+from ai_blackbox_recorder import BlackBoxConfig, configure, trace, tracer, SpanKind
 
 configure(BlackBoxConfig(db_path={self.db_path!r}, flush_interval_seconds=0.05))
 
@@ -112,7 +112,7 @@ class TestTailSurvivesProcessDeath(_ScriptRunner):
     def test_sigkill_leaves_the_running_span_on_disk(self):
         script = self._write_script(f"""
 import time
-from blackbox_recorder import BlackBoxConfig, configure, get_tracer, SpanKind
+from ai_blackbox_recorder import BlackBoxConfig, configure, get_tracer, SpanKind
 
 configure(BlackBoxConfig(db_path={self.db_path!r}, flush_interval_seconds=0.05))
 recorder = get_tracer()
@@ -150,7 +150,7 @@ with recorder.span("hung_agent", kind=SpanKind.AGENT, inputs={{"query": "why is 
 
     def test_exit_without_close_still_persists_everything(self):
         self._run(f"""
-from blackbox_recorder import BlackBoxConfig, configure, trace, SpanKind
+from ai_blackbox_recorder import BlackBoxConfig, configure, trace, SpanKind
 
 configure(BlackBoxConfig(db_path={self.db_path!r}))
 

@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/python-3.10+-brightgreen" alt="Python">
   <img src="https://img.shields.io/badge/dependencies-0_(stdlib_only)-orange" alt="Zero deps">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="License">
@@ -38,7 +38,7 @@ If you try to add standard tracing (LangSmith, Logfire, Phoenix), you suddenly n
 
 ## 🦸 The Solution
 
-`blackbox-recorder` is a **dashcam for your AI**. 
+`ai-blackbox-recorder` is a **dashcam for your AI**. 
 
 Like a flight recorder in an aircraft, it sits quietly in the background, sipping tea, and silently writing every single thought, prompt, and tool call into a local SQLite file. When things go boom, you don't guess — you just pull the tape.
 
@@ -58,20 +58,28 @@ Like a flight recorder in an aircraft, it sits quietly in the background, sippin
 
 ### 🤖 Note for AI Agents (Antigravity, Claude, Cursor)
 > If you are an AI assistant helping a human integrate tracing, you'll love this: **It has zero dependencies**. 
-> 1. Run `pip install blackbox-recorder` — it won't cause any pip resolver conflicts! 
-> 2. Import it, add the `@trace` decorator to the human's functions.
-> 3. You can immediately check your own work using `python -m blackbox_recorder list` in the terminal!
+> 1. Install it from a release (see below) — zero dependencies means no pip resolver conflicts.
+> 2. Import it as `ai_blackbox_recorder`, add the `@trace` decorator to the human's functions.
+> 3. You can immediately check your own work using `python -m ai_blackbox_recorder list` in the terminal!
 
 ### Installation
 
+> **Not on PyPI yet.** Note that `pip install blackbox-recorder` fetches an [unrelated project](https://github.com/Harshit-code-tech/BLACKBOX) that happens to share that name — not this library.
+
 ```bash
-pip install blackbox-recorder
+# latest release
+pip install https://github.com/amyotoff/blackbox-recorder/releases/download/v0.7.0/ai_blackbox_recorder-0.7.0-py3-none-any.whl
+
+# or from source
+pip install git+https://github.com/amyotoff/blackbox-recorder@v0.7.0
 ```
+
+Python 3.10+, no dependencies. The distribution is `ai-blackbox-recorder`, the import is `ai_blackbox_recorder`, and the CLI is `ai-blackbox-recorder`.
 
 ### Two Lines to Start Recording
 
 ```python
-from blackbox_recorder import trace, SpanKind
+from ai_blackbox_recorder import trace, SpanKind
 
 @trace(kind=SpanKind.TOOL)
 def search_web(query: str) -> list:
@@ -89,13 +97,13 @@ That's it. Every call to `search_web` and `my_agent` is now recorded with full i
 
 ```bash
 # What happened recently?
-blackbox-recorder list
+ai-blackbox-recorder list
 
 # Show the execution tree
-blackbox-recorder show <TRACE_ID>
+ai-blackbox-recorder show <TRACE_ID>
 
 # Full details: prompts, thinking, tokens
-blackbox-recorder show <TRACE_ID> -v
+ai-blackbox-recorder show <TRACE_ID> -v
 ```
 
 ---
@@ -109,7 +117,7 @@ Installing the package records nothing on its own. A useful flight recording com
 ```python
 # main.py — the first thing your process runs
 import os
-from blackbox_recorder import BlackBoxConfig, configure
+from ai_blackbox_recorder import BlackBoxConfig, configure
 
 configure(BlackBoxConfig(
     db_path=os.getenv("BLACKBOX_DB", "/var/lib/myagent/traces.db"),
@@ -143,7 +151,7 @@ This is the highest-value hour you'll spend. Route all LLM traffic through a sin
 
 ```python
 # llm.py — the only place in the codebase that talks to the model
-from blackbox_recorder import tracer, SpanKind
+from ai_blackbox_recorder import tracer, SpanKind
 
 async def call_llm(prompt: str, *, system: str = "", model: str = "gemini-2.5-flash", tools=None):
     with tracer.span(f"llm:{model}", kind=SpanKind.LLM) as span:
@@ -176,7 +184,7 @@ def charge_customer(order_id: str, amount_cents: int) -> dict:
 This is what turns *"a user is complaining about something that happened yesterday"* into *"here is the exact recording"*.
 
 ```python
-from blackbox_recorder import set_session_id, tracer, SpanKind
+from ai_blackbox_recorder import set_session_id, tracer, SpanKind
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
@@ -188,7 +196,7 @@ async def chat(req: ChatRequest):
         return {"answer": answer, "trace_id": root.trace_id}
 ```
 
-Now `blackbox-recorder list --session <user_id>` gives you that user's history, and any trace ID appearing in your logs, error tracker or support ticket opens the full recording with `show -v`.
+Now `ai-blackbox-recorder list --session <user_id>` gives you that user's history, and any trace ID appearing in your logs, error tracker or support ticket opens the full recording with `show -v`.
 
 ### 5. Async, threads and workers — the one real gotcha
 
@@ -225,7 +233,7 @@ set_trace_id(job["trace_id"])                               # consumer, before i
 - [ ] `retention` and `max_db_size_mb` sized to that volume — the recorder evicts oldest traces rather than filling the disk
 - [ ] `enabled=False` in unit tests and CI so test runs don't pollute the recording
 - [ ] `*.db`, `*.db-wal`, `*.db-shm` in `.gitignore` (already there in this repo)
-- [ ] the CLI is available where the DB lives — `docker exec -it myagent blackbox-recorder list`
+- [ ] the CLI is available where the DB lives — `docker exec -it myagent ai-blackbox-recorder list`
 - [ ] nothing else to run: no collector, no sidecar, no port
 
 ---
@@ -239,7 +247,7 @@ A recording nobody reads is just disk usage. Four workflows where the tape pays 
 Before writing the prompt for a new capability, look at what users are really doing, not at what the spec assumes:
 
 ```bash
-blackbox-recorder export -o corpus.jsonl        # everything, one span per line
+ai-blackbox-recorder export -o corpus.jsonl        # everything, one span per line
 ```
 
 ```sql
@@ -278,7 +286,7 @@ The same query shape catches silent regressions after a refactor: latency drifti
 The best eval set is the traffic you already recorded. Pull real prompts and the completions you shipped, then use them as regression cases:
 
 ```python
-from blackbox_recorder import BlackBoxConfig, TraceStorage
+from ai_blackbox_recorder import BlackBoxConfig, TraceStorage
 
 storage = TraceStorage(BlackBoxConfig(db_path="traces.db"))
 
@@ -297,7 +305,7 @@ set_session_id("eval:prompt-v3")
 ```
 
 ```bash
-blackbox-recorder list --session eval:prompt-v3 --errors-only    # what broke in this run
+ai-blackbox-recorder list --session eval:prompt-v3 --errors-only    # what broke in this run
 ```
 
 Because every eval run is itself a set of traces, a failing case opens with `show -v` and shows the whole chain — prompt, thinking, tool calls — instead of a bare pass/fail.
@@ -305,9 +313,9 @@ Because every eval run is itself a set of traces, a failing case opens with `sho
 ### Incident investigation — the 3 AM runbook
 
 ```bash
-blackbox-recorder errors --limit 20              # 1. what failed recently
-blackbox-recorder show <TRACE_ID> -v             # 2. the full chain of that failure
-blackbox-recorder export --trace <TRACE_ID> -o incident.jsonl   # 3. attach to the ticket
+ai-blackbox-recorder errors --limit 20              # 1. what failed recently
+ai-blackbox-recorder show <TRACE_ID> -v             # 2. the full chain of that failure
+ai-blackbox-recorder export --trace <TRACE_ID> -o incident.jsonl   # 3. attach to the ticket
 ```
 
 Read the tree top-down and the failure usually names itself: an `LLM` span whose `🔧 Tool Call` has wrong arguments is a prompt problem; a `TOOL` span with a clean call but a junk `📤 Result` is someone else's outage; a clean tool result followed by a wrong final answer is your post-processing.
@@ -324,7 +332,7 @@ Read the tree top-down and the failure usually names itself: an `LLM` span whose
     └── ⏳ [TOOL] charge_api (unfinished)
 ```
 
-The deepest `⏳` span is where the process was when it went down — here, inside `charge_api`, with the arguments it was called with. The same marker appears as `⏳ OPEN` in `blackbox-recorder list`. A span that is still `⏳` for a long-finished run is a hang, a kill, or a tool that never returns.
+The deepest `⏳` span is where the process was when it went down — here, inside `charge_api`, with the arguments it was called with. The same marker appears as `⏳ OPEN` in `ai-blackbox-recorder list`. A span that is still `⏳` for a long-finished run is a hang, a kill, or a tool that never returns.
 
 ### SQL cookbook
 
@@ -363,7 +371,7 @@ The CLI is your primary tool for post-incident analysis. Install the package and
 ### `list` — Recent Traces
 
 ```bash
-$ blackbox-recorder list --limit 5
+$ ai-blackbox-recorder list --limit 5
 
 📋 Last 5 Traces:
 ─────────────────────────────────────────────────────────────────────────────────────
@@ -379,7 +387,7 @@ Start Time           Status  Spans   Duration   Root Operation       Trace ID
 ### `show` — Execution Tree
 
 ```bash
-$ blackbox-recorder show 0f472b36b2a941469f7a9ff66b28abd0
+$ ai-blackbox-recorder show 0f472b36b2a941469f7a9ff66b28abd0
 
 📦 Trace ID: 0f472b36b2a941469f7a9ff66b28abd0
 ⏱️  Total Spans: 4
@@ -394,7 +402,7 @@ $ blackbox-recorder show 0f472b36b2a941469f7a9ff66b28abd0
 ### `show -v` — Full Verbose Output with Prompts and Thinking
 
 ```bash
-$ blackbox-recorder show 0f472b36... -v
+$ ai-blackbox-recorder show 0f472b36... -v
 
 └── ✅ [AGENT] support_agent (132.7ms)
     📥 Input: {"user_query": "Какая погода в Париже?"}
@@ -418,14 +426,14 @@ $ blackbox-recorder show 0f472b36... -v
 
 | Command | Description |
 | :--- | :--- |
-| `blackbox-recorder stats` | Database stats: size, span/trace counts, retention policy |
-| `blackbox-recorder list [--limit N] [--session ID] [--errors-only]` | List traces with filtering |
-| `blackbox-recorder errors [--limit N]` | Show only traces with errors |
-| `blackbox-recorder show <TRACE_ID> [-v] [--json]` | Hierarchical tree view; `-v` for prompts/thinking/tokens |
-| `blackbox-recorder export -o file.jsonl [--trace ID]` | Export to OpenInference-compatible JSONL |
-| `blackbox-recorder cleanup [--retention 7d]` | Manual TTL cleanup and disk reclaim |
+| `ai-blackbox-recorder stats` | Database stats: size, span/trace counts, retention policy |
+| `ai-blackbox-recorder list [--limit N] [--session ID] [--errors-only]` | List traces with filtering |
+| `ai-blackbox-recorder errors [--limit N]` | Show only traces with errors |
+| `ai-blackbox-recorder show <TRACE_ID> [-v] [--json]` | Hierarchical tree view; `-v` for prompts/thinking/tokens |
+| `ai-blackbox-recorder export -o file.jsonl [--trace ID]` | Export to OpenInference-compatible JSONL |
+| `ai-blackbox-recorder cleanup [--retention 7d]` | Manual TTL cleanup and disk reclaim |
 
-> **Tip:** You can also run CLI as a module: `python -m blackbox_recorder stats`
+> **Tip:** You can also run CLI as a module: `python -m ai_blackbox_recorder stats`
 
 ---
 
@@ -436,7 +444,7 @@ BlackBox has first-class support for recording everything that happens inside an
 ### Recording Prompts, Thinking, and Completions
 
 ```python
-from blackbox_recorder import tracer, SpanKind
+from ai_blackbox_recorder import tracer, SpanKind
 
 with tracer.span("reasoning_step", kind=SpanKind.LLM) as span:
     # Call your LLM here...
@@ -517,7 +525,7 @@ with tracer.span("chat_turn", kind=SpanKind.LLM) as span:
 The simplest approach. Works with both sync and async functions. Automatically captures all arguments and return values.
 
 ```python
-from blackbox_recorder import trace, SpanKind
+from ai_blackbox_recorder import trace, SpanKind
 
 @trace(kind=SpanKind.TOOL)
 def calculate_vat(amount: float, rate: float = 0.20) -> float:
@@ -536,7 +544,7 @@ async def run_agent(query: str) -> str:
 For fine-grained control over what's recorded, or when you need to set LLM-specific fields.
 
 ```python
-from blackbox_recorder import tracer, SpanKind
+from ai_blackbox_recorder import tracer, SpanKind
 
 with tracer.span("vector_search", kind=SpanKind.RETRIEVER) as span:
     span.set_metadata("index", "knowledge_base_v2")
@@ -587,13 +595,13 @@ Compatible with the [OpenInference](https://github.com/Arize-ai/openinference) s
 Bind traces to a user, session, or conversation:
 
 ```python
-from blackbox_recorder import tracer
+from ai_blackbox_recorder import tracer
 
 # Set once — all subsequent spans inherit this session ID
 tracer.set_session_id("tg_user_12345")
 
 # Later, filter by session in CLI
-# blackbox-recorder list --session tg_user_12345
+# ai-blackbox-recorder list --session tg_user_12345
 ```
 
 ### Python Query API
@@ -601,7 +609,7 @@ tracer.set_session_id("tg_user_12345")
 Access traces programmatically without the CLI:
 
 ```python
-from blackbox_recorder import tracer
+from ai_blackbox_recorder import tracer
 
 # List recent traces
 traces = tracer.storage.list_traces(limit=10, has_error=True)
@@ -614,7 +622,7 @@ stats = tracer.storage.get_stats()
 print(f"DB size: {stats['db_size_mb']} MB, Traces: {stats['total_traces']}")
 
 # Export to JSONL
-from blackbox_recorder import export_trace_to_jsonl
+from ai_blackbox_recorder import export_trace_to_jsonl
 export_trace_to_jsonl(tracer.storage, "abc123def456", "incident_report.jsonl")
 ```
 
@@ -637,7 +645,7 @@ Neither survives `SIGKILL` or an OOM kill — nothing running inside the process
 ### Default Configuration
 
 ```python
-from blackbox_recorder import BlackBoxConfig, Tracer
+from ai_blackbox_recorder import BlackBoxConfig, Tracer
 
 config = BlackBoxConfig(
     db_path="blackbox_traces.db",       # SQLite file path
@@ -660,7 +668,7 @@ tracer = Tracer(config=config)
 To configure the *default* tracer — the one behind the bare `@trace` decorator and `tracer` object — call `configure()` at your entry point instead of building an instance:
 
 ```python
-from blackbox_recorder import BlackBoxConfig, configure
+from ai_blackbox_recorder import BlackBoxConfig, configure
 
 configure(BlackBoxConfig(db_path="/var/lib/myagent/traces.db", retention="7d"))
 ```
@@ -690,7 +698,7 @@ When the database file exceeds `max_db_size_mb`, the oldest complete traces are 
 This runs:
 1. On tracer startup
 2. Every `cleanup_interval_hours` (default: 6 hours)
-3. Manually via `blackbox-recorder cleanup`
+3. Manually via `ai-blackbox-recorder cleanup`
 
 ### Disabling in Tests
 
@@ -764,9 +772,9 @@ support_tracer = Tracer(BlackBoxConfig(db_path="support_traces.db", retention="7
 ## 📂 Project Structure
 
 ```
-blackbox_recorder/
+ai_blackbox_recorder/
 ├── __init__.py          # Public API exports
-├── __main__.py          # python -m blackbox_recorder entry point
+├── __main__.py          # python -m ai_blackbox_recorder entry point
 ├── tracer.py            # Core: Tracer class, @trace decorator, context manager, worker thread
 ├── span.py              # Span dataclass, SpanKind enum, set_llm_io(), set_tool_call()
 ├── storage.py           # SQLite WAL engine, TTL cleanup, max-size eviction
@@ -799,15 +807,15 @@ Durability is tested the only way that proves anything — by killing a real pro
 ## 🐳 Docker
 
 ```bash
-docker build -t blackbox-recorder .
-docker run blackbox-recorder          # runs test suite
+docker build -t ai-blackbox-recorder .
+docker run ai-blackbox-recorder          # runs test suite
 ```
 
 ---
 
 ## 🆚 Comparison with Alternatives
 
-| Feature | blackbox-recorder | LangSmith | Langfuse | Arize Phoenix | ai-trace |
+| Feature | ai-blackbox-recorder | LangSmith | Langfuse | Arize Phoenix | ai-trace |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Dependencies** | 0 (stdlib) | 50+ | 30+ | 40+ | 0 |
 | **Requires infra** | No | Cloud | PostgreSQL | Docker | No |
@@ -864,8 +872,8 @@ config = BlackBoxConfig(
 A lightweight, single-page HTML dashboard served directly from the CLI — no Node.js, no npm, no separate process:
 
 ```bash
-blackbox-recorder ui                    # Open browser at localhost:8080
-blackbox-recorder ui --port 9090        # Custom port
+ai-blackbox-recorder ui                    # Open browser at localhost:8080
+ai-blackbox-recorder ui --port 9090        # Custom port
 ```
 
 Features planned:
@@ -880,7 +888,7 @@ Features planned:
 Export a single self-contained HTML file with the full trace tree, prompts, thinking, and metadata — shareable via email or Slack with zero tooling required on the recipient's side:
 
 ```bash
-blackbox-recorder report <TRACE_ID> -o incident_2026-08-18.html
+ai-blackbox-recorder report <TRACE_ID> -o incident_2026-08-18.html
 ```
 
 ### Auto-Instrumentation Hooks
@@ -889,7 +897,7 @@ Optional helpers to automatically instrument popular LLM SDKs (Google GenAI, Ope
 
 ```python
 # Planned v1.0 API
-from blackbox_recorder.integrations import patch_google_genai
+from ai_blackbox_recorder.integrations import patch_google_genai
 patch_google_genai(tracer)  # All google.genai calls auto-recorded
 ```
 

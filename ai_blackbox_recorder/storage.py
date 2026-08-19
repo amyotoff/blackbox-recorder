@@ -10,8 +10,8 @@ import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.span import Span
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.span import Span
 
 
 class TraceStorage:

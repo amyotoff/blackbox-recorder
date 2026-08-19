@@ -3,7 +3,7 @@ Asynchronous agent pipeline with concurrent tool calls and LLM reasoning steps.
 """
 
 import asyncio
-from blackbox_recorder import SpanKind, trace, tracer
+from ai_blackbox_recorder import SpanKind, trace, tracer
 
 
 @trace(name="web_search", kind=SpanKind.TOOL)
@@ -37,7 +37,7 @@ async def main():
     print(f"Result: {res}")
     
     tracer.flush()
-    print("\nRecorded trace! Run `python -m blackbox_recorder show <trace_id>` to view.")
+    print("\nRecorded trace! Run `python -m ai_blackbox_recorder show <trace_id>` to view.")
 
 
 if __name__ == "__main__":

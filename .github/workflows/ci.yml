@@ -31,13 +31,13 @@ jobs:
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 blackbox_recorder tests --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 ai_blackbox_recorder tests --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings.
-        flake8 blackbox_recorder tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        flake8 ai_blackbox_recorder tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
         
     - name: Security check with bandit
       run: |
-        bandit -r blackbox_recorder -lll
+        bandit -r ai_blackbox_recorder -lll
         
     - name: Run E2E and Unit Tests
       run: |

@@ -4,7 +4,7 @@ completions, chain-of-thought reasoning, tool calls, and token usage.
 """
 
 import asyncio
-from blackbox_recorder import SpanKind, tracer
+from ai_blackbox_recorder import SpanKind, tracer
 
 
 async def main():
@@ -61,9 +61,9 @@ async def main():
 
     tracer.flush()
     print("✅ Trace recorded. Now inspect it:\n")
-    print("  blackbox-recorder list")
-    print("  blackbox-recorder show <TRACE_ID>")
-    print("  blackbox-recorder show <TRACE_ID> -v   # ← prompts, thinking, tokens!")
+    print("  ai-blackbox-recorder list")
+    print("  ai-blackbox-recorder show <TRACE_ID>")
+    print("  ai-blackbox-recorder show <TRACE_ID> -v   # ← prompts, thinking, tokens!")
 
 
 if __name__ == "__main__":

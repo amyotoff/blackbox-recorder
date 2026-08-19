@@ -7,9 +7,9 @@ import os
 import subprocess
 import sys
 import time
-from blackbox_recorder.export import export_trace_to_jsonl, render_trace_tree
-from blackbox_recorder.span import Span, SpanKind
-from blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.export import export_trace_to_jsonl, render_trace_tree
+from ai_blackbox_recorder.span import Span, SpanKind
+from ai_blackbox_recorder.storage import TraceStorage
 
 
 def test_tree_rendering():
@@ -55,7 +55,7 @@ def test_tree_rendering():
 
 
 def test_jsonl_export(temp_db_path, temp_dir):
-    from blackbox_recorder.config import BlackBoxConfig
+    from ai_blackbox_recorder.config import BlackBoxConfig
     storage = TraceStorage(BlackBoxConfig(db_path=temp_db_path))
 
     now = time.time()
@@ -76,7 +76,7 @@ def test_jsonl_export(temp_db_path, temp_dir):
 
 
 def test_cli_subcommands(temp_db_path):
-    from blackbox_recorder.config import BlackBoxConfig
+    from ai_blackbox_recorder.config import BlackBoxConfig
     storage = TraceStorage(BlackBoxConfig(db_path=temp_db_path))
 
     now = time.time()
@@ -95,7 +95,7 @@ def test_cli_subcommands(temp_db_path):
 
     # Run CLI stats
     res = subprocess.run(
-        [sys.executable, "-m", "blackbox_recorder", "--db", temp_db_path, "stats"],
+        [sys.executable, "-m", "ai_blackbox_recorder", "--db", temp_db_path, "stats"],
         capture_output=True,
         text=True,
         check=True,
@@ -106,7 +106,7 @@ def test_cli_subcommands(temp_db_path):
 
     # Run CLI list
     res = subprocess.run(
-        [sys.executable, "-m", "blackbox_recorder", "--db", temp_db_path, "list"],
+        [sys.executable, "-m", "ai_blackbox_recorder", "--db", temp_db_path, "list"],
         capture_output=True,
         text=True,
         check=True,
@@ -116,7 +116,7 @@ def test_cli_subcommands(temp_db_path):
 
     # Run CLI show
     res = subprocess.run(
-        [sys.executable, "-m", "blackbox_recorder", "--db", temp_db_path, "show", "trace_cli_test"],
+        [sys.executable, "-m", "ai_blackbox_recorder", "--db", temp_db_path, "show", "trace_cli_test"],
         capture_output=True,
         text=True,
         check=True,

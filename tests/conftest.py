@@ -1,5 +1,5 @@
 """
-Pytest configuration and shared fixtures for blackbox-recorder tests.
+Pytest configuration and shared fixtures for ai-blackbox-recorder tests.
 """
 
 import os
@@ -7,8 +7,8 @@ import shutil
 import tempfile
 import pytest
 
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.tracer import Tracer
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.tracer import Tracer
 
 
 # Standard test personas per rules:

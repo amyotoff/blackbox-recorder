@@ -16,9 +16,9 @@ import time
 import weakref
 from typing import Any, Callable, Dict, Iterator, List, Optional, Union
 
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.span import Span, SpanKind
-from blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.span import Span, SpanKind
+from ai_blackbox_recorder.storage import TraceStorage
 
 # Context variables for automatic hierarchy tracking across sync & async
 _CURRENT_SPAN: contextvars.ContextVar[Optional[Span]] = contextvars.ContextVar("blackbox_current_span", default=None)
@@ -78,7 +78,7 @@ class Tracer:
                     self.storage.insert_batch(batch)
                 except Exception as exc:
                     # Never crash the host application on logging errors
-                    print(f"[blackbox-recorder] Storage insert error: {exc}")
+                    print(f"[ai-blackbox-recorder] Storage insert error: {exc}")
                 finally:
                     for _ in batch:
                         self._queue.task_done()
@@ -389,7 +389,7 @@ class _DefaultTracerProxy:
     """
     Attribute-forwarding stand-in for the default tracer.
 
-    Keeps `from blackbox_recorder import tracer` free of side effects: the real
+    Keeps `from ai_blackbox_recorder import tracer` free of side effects: the real
     Tracer, its SQLite file and its worker thread appear on first attribute use.
     """
 
