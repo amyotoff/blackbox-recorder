@@ -4,12 +4,11 @@ Publishing runs on [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publi
 mints a short-lived OIDC token that PyPI verifies against a registered publisher. There is no API token
 in the repository, in secrets, or on anyone's laptop.
 
-## One-time setup on PyPI
+## The publisher
 
-`ai-blackbox-recorder` does not exist on PyPI yet, so it needs a **pending publisher** — a publisher
-registered for a project that has not been created. Go to
-[PyPI → Your account → Publishing](https://pypi.org/manage/account/publishing/) and add a GitHub publisher
-with exactly these values:
+[`ai-blackbox-recorder`](https://pypi.org/project/ai-blackbox-recorder/) is registered on PyPI with a
+GitHub publisher, configured under
+[PyPI → Your account → Publishing](https://pypi.org/manage/account/publishing/):
 
 | Field | Value |
 | :--- | :--- |
@@ -19,30 +18,26 @@ with exactly these values:
 | Workflow name | `publish.yml` |
 | Environment name | `pypi` |
 
-The workflow filename and the environment name must match
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml) exactly, or PyPI rejects the upload.
-
-> A pending publisher **does not reserve the name**. `ai-blackbox-recorder` is only claimed on the first
-> successful publish, so until then someone else can still take it.
+The workflow filename and the environment name must keep matching
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) exactly — rename either one and PyPI
+rejects the upload. Nothing else authenticates the release: there is no token to rotate or leak.
 
 ## Cutting a release
 
-1. Bump the version in `pyproject.toml`, `ai_blackbox_recorder/__init__.py` and the README badge — all three.
+1. Bump the version in `pyproject.toml` and `ai_blackbox_recorder/__init__.py` — both. (The README badge
+   reads the current version from PyPI, so it needs no bump.)
 2. Merge to `main` with CI green.
 3. Publish a GitHub release tagged `vX.Y.Z`.
 
-The workflow builds the sdist and wheel, refuses to continue if the tag disagrees with the version in
-`pyproject.toml`, and uploads to PyPI. Attach the same artifacts to the GitHub release if you want them
-downloadable without pip.
+That is the whole process. The workflow builds the sdist and wheel, refuses to continue if the tag
+disagrees with the version in `pyproject.toml`, and uploads to PyPI with digital attestations. Attach the
+same artifacts to the GitHub release if you want them downloadable without pip.
 
-## The first publish
+A version can never be re-uploaded to PyPI: if a release is wrong, yank it there and ship a new patch
+version.
 
-The v0.7.0 tag was cut before this workflow existed, so it cannot run from that tag. Publish it once by hand:
-**Actions → Publish to PyPI → Run workflow → branch `main`** (which is at 0.7.0). The tag check is skipped for
-manual runs. Every release after that publishes on its own.
+## Publishing without a release
 
-## Trying it against TestPyPI first
-
-Register a second pending publisher with the same values on [TestPyPI](https://test.pypi.org/manage/account/publishing/),
-then add `with: {repository-url: https://test.pypi.org/legacy/}` to the `pypa/gh-action-pypi-publish` step
-on a scratch branch. Worth doing once, since the first real upload is what claims the name.
+**Actions → Publish to PyPI → Run workflow** publishes whatever ref you pick. The tag check is skipped for
+manual runs, so the version in `pyproject.toml` is what gets published — check it first. This is how 0.7.0
+went out, since its tag predates the workflow.
