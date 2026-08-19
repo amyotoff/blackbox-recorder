@@ -23,7 +23,7 @@ class TestE2ECLI(unittest.TestCase):
             f.write(f"""
 import sys
 import time
-from blackbox_recorder import Tracer, BlackBoxConfig, SpanKind
+from ai_blackbox_recorder import Tracer, BlackBoxConfig, SpanKind
 
 config = BlackBoxConfig(db_path='{self.db_path}')
 tracer = Tracer(config)
@@ -52,7 +52,7 @@ tracer.flush()
 
         # 2. Test CLI list
         res_list = subprocess.run(
-            [sys.executable, "-m", "blackbox_recorder", "--db", self.db_path, "list"],
+            [sys.executable, "-m", "ai_blackbox_recorder", "--db", self.db_path, "list"],
             capture_output=True, text=True, check=True, env=self.env
         )
         self.assertIn("e2e_root", res_list.stdout)
@@ -71,7 +71,7 @@ tracer.flush()
 
         # 3. Test CLI show verbose
         res_show = subprocess.run(
-            [sys.executable, "-m", "blackbox_recorder", "--db", self.db_path, "show", trace_id, "-v"],
+            [sys.executable, "-m", "ai_blackbox_recorder", "--db", self.db_path, "show", trace_id, "-v"],
             capture_output=True, text=True, check=True, env=self.env
         )
         self.assertIn("e2e_root", res_show.stdout)

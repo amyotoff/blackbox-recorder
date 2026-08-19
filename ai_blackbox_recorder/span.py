@@ -1,5 +1,5 @@
 """
-Data models and Span representation for blackbox-recorder.
+Data models and Span representation for ai-blackbox-recorder.
 """
 
 from __future__ import annotations

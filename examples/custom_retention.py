@@ -2,7 +2,7 @@
 Configuring custom retention policy (TTL) and maximum database size.
 """
 
-from blackbox_recorder import BlackBoxConfig, SpanKind, Tracer
+from ai_blackbox_recorder import BlackBoxConfig, SpanKind, Tracer
 
 # Custom configuration with 60 days retention and 200MB max disk size
 custom_config = BlackBoxConfig(

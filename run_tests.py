@@ -12,11 +12,11 @@ import tempfile
 import time
 import unittest
 
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.export import export_all_to_jsonl, export_trace_to_jsonl, render_trace_tree
-from blackbox_recorder.span import Span, SpanKind
-from blackbox_recorder.storage import TraceStorage
-from blackbox_recorder.tracer import Tracer
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.export import export_all_to_jsonl, export_trace_to_jsonl, render_trace_tree
+from ai_blackbox_recorder.span import Span, SpanKind
+from ai_blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.tracer import Tracer
 
 
 PERSONA_ALICE = {"tg_id": "111", "username": "alice"}
@@ -222,7 +222,7 @@ class TestBlackBoxRecorder(unittest.TestCase):
         env["PYTHONPATH"] = os.path.dirname(os.path.abspath(__file__))
         
         res = subprocess.run(
-            [sys.executable, "-m", "blackbox_recorder", "--db", self.db_path, "stats"],
+            [sys.executable, "-m", "ai_blackbox_recorder", "--db", self.db_path, "stats"],
             capture_output=True,
             text=True,
             check=True,

@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "blackbox-recorder"
-version = "0.6.0"
+name = "ai-blackbox-recorder"
+version = "0.7.0"
 description = "Universal, zero-dependency KISS flight recorder for AI agents"
 readme = "README.md"
 authors = [{ name = "BlackBox Contributors" }]
@@ -37,7 +37,7 @@ classifiers = [
 ]
 
 [project.scripts]
-blackbox-recorder = "blackbox_recorder._cli:main"
+ai-blackbox-recorder = "ai_blackbox_recorder._cli:main"
 
 [project.optional-dependencies]
 dev = [

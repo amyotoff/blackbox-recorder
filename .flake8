@@ -4,5 +4,5 @@ max-complexity = 20
 exclude = .git,__pycache__,venv,build,dist
 ignore = E203,W503
 per-file-ignores =
-    blackbox_recorder/export.py:C901
-    blackbox_recorder/tracer.py:C901
+    ai_blackbox_recorder/export.py:C901
+    ai_blackbox_recorder/tracer.py:C901

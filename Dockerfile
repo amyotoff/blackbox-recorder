@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir pytest pytest-asyncio
 
 # Copy project files
 COPY pyproject.toml README.md LICENSE ./
-COPY blackbox_recorder/ ./blackbox_recorder/
+COPY ai_blackbox_recorder/ ./ai_blackbox_recorder/
 COPY tests/ ./tests/
 COPY examples/ ./examples/
 

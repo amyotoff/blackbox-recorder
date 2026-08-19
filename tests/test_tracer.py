@@ -3,7 +3,7 @@ Tests for core Tracer functionality (synchronous, context manager, hierarchy).
 """
 
 import pytest
-from blackbox_recorder.span import SpanKind
+from ai_blackbox_recorder.span import SpanKind
 from tests.conftest import PERSONA_ALICE, PERSONA_BOB, PERSONA_BENDER
 
 

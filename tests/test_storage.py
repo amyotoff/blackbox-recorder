@@ -3,9 +3,9 @@ Tests for SQLite storage, TTL retention cleanup, and DB size limit eviction.
 """
 
 import time
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.span import Span, SpanKind
-from blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.span import Span, SpanKind
+from ai_blackbox_recorder.storage import TraceStorage
 from tests.conftest import PERSONA_ALICE, PERSONA_BOB
 
 

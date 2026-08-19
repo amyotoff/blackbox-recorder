@@ -11,9 +11,9 @@ import json
 import sys
 from typing import Optional
 
-from blackbox_recorder.config import BlackBoxConfig
-from blackbox_recorder.export import export_all_to_jsonl, export_trace_to_jsonl, render_trace_tree
-from blackbox_recorder.storage import TraceStorage
+from ai_blackbox_recorder.config import BlackBoxConfig
+from ai_blackbox_recorder.export import export_all_to_jsonl, export_trace_to_jsonl, render_trace_tree
+from ai_blackbox_recorder.storage import TraceStorage
 
 
 def _format_time(ts: Optional[float]) -> str:
@@ -129,7 +129,7 @@ def cmd_export(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="blackbox-recorder",
+        prog="ai-blackbox-recorder",
         description="🛫 BlackBox Recorder — AI Agent Incident Flight Recorder",
     )
     parser.add_argument("--db", default="blackbox_traces.db", help="Path to SQLite trace database")

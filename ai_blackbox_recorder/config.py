@@ -1,5 +1,5 @@
 """
-Configuration management for blackbox-recorder.
+Configuration management for ai-blackbox-recorder.
 """
 
 from __future__ import annotations
