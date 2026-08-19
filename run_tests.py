@@ -161,7 +161,7 @@ class TestBlackBoxRecorder(unittest.TestCase):
         # Set tiny limit
         cfg = BlackBoxConfig(
             db_path=os.path.join(self.temp_dir, "size_test.db"),
-            max_db_size_mb=0.001,  # ~1 KB limit
+            max_db_size_mb=0.2,  # room for a couple of recent traces
         )
         st = TraceStorage(cfg)
         spans = [
@@ -177,9 +177,15 @@ class TestBlackBoxRecorder(unittest.TestCase):
         st.insert_batch(spans)
         
         # Verify size exceeds limit
-        self.assertGreater(st.get_total_db_size_bytes(), 0.001 * 1024 * 1024)
+        self.assertGreater(st.get_total_db_size_bytes(), 0.2 * 1024 * 1024)
         deleted = st.enforce_max_size()
         self.assertGreater(deleted, 0)
+
+        # The point of eviction is the history that remains, not the rows removed.
+        surviving = {t["trace_id"] for t in st.list_traces(limit=100)}
+        self.assertTrue(surviving, "eviction emptied the database")
+        self.assertIn("trace_4", surviving)
+        self.assertNotIn("trace_0", surviving)
 
     def test_async_workflow(self):
         async def run_async_test():
@@ -235,12 +241,14 @@ if __name__ == "__main__":
     # Also load the E2E and crash-durability tests
     import tests.test_crash_recovery
     import tests.test_e2e
+    import tests.test_retention
 
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(TestBlackBoxRecorder))
     suite.addTests(loader.loadTestsFromModule(tests.test_e2e))
     suite.addTests(loader.loadTestsFromModule(tests.test_crash_recovery))
+    suite.addTests(loader.loadTestsFromModule(tests.test_retention))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

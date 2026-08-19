@@ -67,8 +67,8 @@ def test_retention_ttl_cleanup(temp_db_path):
 
 
 def test_max_db_size_enforcement(temp_db_path):
-    # Set a tiny max size (0.01 MB = ~10 KB) for testing
-    config = BlackBoxConfig(db_path=temp_db_path, max_db_size_mb=0.01, retention="30d")
+    # Small enough to force eviction, large enough that recent traces can still fit.
+    config = BlackBoxConfig(db_path=temp_db_path, max_db_size_mb=0.07, retention="30d")
     storage = TraceStorage(config)
 
     # Create 5 traces with large payload
@@ -87,9 +87,16 @@ def test_max_db_size_enforcement(temp_db_path):
 
     storage.insert_batch(spans)
 
-    # Check if enforce_max_size evicts oldest traces
+    # Eviction has to trim the history, not erase it: `deleted > 0` alone is also
+    # true when the database is emptied.
     deleted = storage.enforce_max_size()
     assert deleted > 0
+
+    surviving = {t["trace_id"] for t in storage.list_traces(limit=100)}
+    assert surviving, "eviction emptied the database"
+    assert "trace_batch_4" in surviving, "the newest trace was evicted"
+    assert "trace_batch_0" not in surviving, "the oldest trace was kept"
+    assert storage.get_total_db_size_bytes() <= 0.07 * 1024 * 1024
 
 
 def test_retention_string_parsing():

@@ -48,7 +48,7 @@ Like a flight recorder in an aircraft, it sits quietly in the background, sippin
 - **Silent until used** — importing the library creates no database and starts no thread; the recorder wakes up on your first traced call
 - **Automatic call hierarchy** — `contextvars` magically builds the execution tree for you (sync + async)
 - **Configurable retention** — auto-deletes traces older than 7 days, 30 days, etc.
-- **Disk protection** — hard disk cap at 300 MB, older traces get evicted so your server doesn't crash
+- **Disk protection** — hard disk cap at 300 MB; oldest traces are evicted whole, newest are kept, and the space is really returned
 - **First-class LLM support** — prompts, completions, chain-of-thought, token counts, tool calls
 - **Incident CLI** — beautiful ASCII tree with everything you need to debug right in the terminal
 
@@ -653,7 +653,7 @@ config = BlackBoxConfig(
     cleanup_interval_hours=6,            # Periodic maintenance interval
     capture_inputs=True,                 # Record function arguments
     capture_outputs=True,                # Record return values
-    max_field_chars=100_000,             # Truncate oversized payloads
+    max_field_chars=100_000,             # Per-field cap; oversized values keep both ends
     record_open_spans=True,              # Write spans on start, so a hard kill still leaves a record
     flush_timeout_seconds=5.0,           # Max wait for the buffer to drain on close() / exit
 )
@@ -689,12 +689,22 @@ On a normal exit — including an unhandled exception — a shutdown hook drains
 
 ### Disk Protection
 
-When the database file exceeds `max_db_size_mb`, the oldest complete traces are evicted automatically. After eviction, SQLite reclaims disk space via `PRAGMA incremental_vacuum`.
+When the database exceeds `max_db_size_mb`, the oldest traces are evicted until it fits again, and the freed pages are returned to the filesystem. Eviction always trims — the newest traces survive, because the recording you need after an incident is the recent one.
+
+Retention is decided **per trace, never per span**. A trace is deleted once its *newest* span has aged past `retention`, so a long-running trace is never cut in half at the cutoff, leaving spans whose parent no longer exists.
 
 This runs:
 1. On tracer startup
 2. Every `cleanup_interval_hours` (default: 6 hours)
 3. Manually via `ai-blackbox-recorder cleanup`
+
+> **Upgrading from 0.7.0 or earlier?** Those versions never actually enabled incremental auto-vacuum, so their database files can only grow. On first use, 0.8.0 rewrites such a file once, in the background, to switch it on. Nothing is lost and no call waits for it; `ai-blackbox-recorder cleanup` does the same on demand.
+
+### Oversized Payloads
+
+A value larger than `max_field_chars` keeps **both ends** and drops its middle, marked `… [truncated: N chars] …`. Trimming only the tail would throw away the end of the story — the final answer, the last tool result, the exception that ended the run — which is usually why the trace is being read at all.
+
+Where possible the structure is preserved and only the long strings inside it are trimmed, so `inputs["prompt"]` is still a field you can reach. Stored payloads always remain valid JSON, even when the document itself has to be shortened.
 
 ### Disabling in Tests
 

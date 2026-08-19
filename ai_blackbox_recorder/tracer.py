@@ -50,6 +50,14 @@ class Tracer:
 
     def _worker_loop(self) -> None:
         """Background thread worker to flush queued spans to SQLite in batches."""
+        # Databases written before 0.8.0 cannot return deleted space to the
+        # filesystem until auto-vacuum is switched on, which needs a full rewrite.
+        # Do it here, in the background, so no traced call ever waits for it.
+        try:
+            self.storage.ensure_incremental_vacuum()
+        except Exception:
+            pass
+
         while not self._stop_event.is_set():
             batch: List[Span] = []
             try:
