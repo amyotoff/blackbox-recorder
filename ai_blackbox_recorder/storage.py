@@ -47,15 +47,23 @@ class TraceStorage:
         Hand pages freed by DELETE back to the filesystem.
 
         `PRAGMA incremental_vacuum` releases one page per step, so a bare execute()
-        reclaims exactly one page and leaves the file at its high-water mark. It has
-        to be driven to completion.
+        reclaims exactly one page and leaves the file at its high-water mark: it has
+        to be driven to completion. Even then some SQLite builds leave the freelist
+        populated, and there the only way to shrink the file is a full rewrite — so
+        check the result and fall back to VACUUM rather than let the size cap quietly
+        become unenforceable, which is what turns eviction into a total wipe.
         """
         try:
             conn.execute("PRAGMA incremental_vacuum;").fetchall()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);").fetchall()
+            if conn.execute("PRAGMA freelist_count;").fetchone()[0] == 0:
+                return
         except Exception:
             return
+
         try:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            conn.execute("VACUUM;")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);").fetchall()
         except Exception:
             pass
 

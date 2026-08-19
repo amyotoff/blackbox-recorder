@@ -56,7 +56,36 @@ class TestSpaceIsActuallyReclaimed(RetentionTestCase):
         before = storage.get_total_db_size_bytes()
         storage.cleanup_ttl()
         after = storage.get_total_db_size_bytes()
-        self.assertLess(after, before / 2, "freed pages were never returned to the filesystem")
+
+        def _breakdown():
+            parts = {suffix or "db": (os.path.getsize(storage.db_path + suffix)
+                                      if os.path.exists(storage.db_path + suffix) else 0)
+                     for suffix in ("", "-wal", "-shm")}
+            return f"{before} -> {after}, files {parts}, sqlite {sqlite3.sqlite_version}"
+
+        self.assertLess(after, before / 2,
+                        f"freed pages were never returned to the filesystem ({_breakdown()})")
+
+    def test_space_is_reclaimed_even_without_incremental_auto_vacuum(self):
+        # Stands in for SQLite builds where the incremental path frees nothing: the
+        # size cap has to hold there too, or eviction degenerates into a total wipe.
+        path = self._path("legacy.db")
+        conn = sqlite3.connect(path, isolation_level=None)
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")  # too late to take effect
+        conn.execute("CREATE TABLE legacy_payload (x);")
+        conn.close()
+
+        storage = TraceStorage(BlackBoxConfig(db_path=path, retention=1))
+        expired = self.now - (30 * 86400)
+        storage.insert_batch([
+            Span(trace_id=f"t{i}", span_id=f"s{i}", name="agent", kind=SpanKind.AGENT,
+                 start_time=expired, end_time=expired + 1, inputs={"payload": "Я" * 20000})
+            for i in range(30)
+        ])
+        before = storage.get_total_db_size_bytes()
+        storage.cleanup_ttl()
+        self.assertLess(storage.get_total_db_size_bytes(), before / 2)
 
     def test_migration_enables_auto_vacuum_on_an_older_database(self):
         path = self._path("legacy.db")
