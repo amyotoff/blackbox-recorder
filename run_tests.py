@@ -232,14 +232,17 @@ class TestBlackBoxRecorder(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Also load the E2E tests
+    # Also load the E2E and crash-durability tests
+    import tests.test_crash_recovery
     import tests.test_e2e
-    
+
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(TestBlackBoxRecorder))
     suite.addTests(loader.loadTestsFromModule(tests.test_e2e))
-    
+    suite.addTests(loader.loadTestsFromModule(tests.test_crash_recovery))
+
     runner = unittest.TextTestRunner(verbosity=2)
-    runner.run(suite)
+    result = runner.run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)
 

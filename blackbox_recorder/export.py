@@ -73,6 +73,7 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
     total_prompt_tokens = 0
     total_completion_tokens = 0
     total_errors = 0
+    total_incomplete = 0
     for s in spans:
         metrics = s.get("metrics") or {}
         if isinstance(metrics, str):
@@ -84,6 +85,8 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
         total_completion_tokens += metrics.get("completion_tokens", 0)
         if s.get("has_error") or s.get("error"):
             total_errors += 1
+        if s.get("end_time") is None:
+            total_incomplete += 1
 
     lines.append(f"📦 Trace ID: {root_trace_id}")
     lines.append(f"⏱️  Total Spans: {len(spans)}")
@@ -94,14 +97,25 @@ def render_trace_tree(spans: List[Dict[str, Any]], verbose: bool = False) -> str
         )
     if total_errors:
         lines.append(f"❌ Errors: {total_errors}")
+    if total_incomplete:
+        lines.append(
+            f"⏳ Unfinished: {total_incomplete} "
+            "(still running, or the process died before they returned)"
+        )
     lines.append("─" * 70)
 
     def _render_node(span_id: str, prefix: str = "", is_last: bool = True) -> None:
         span = span_map[span_id]
         name = span["name"]
         kind = span["kind"]
-        duration = f"{span['duration_ms']}ms" if span.get("duration_ms") is not None else "running"
-        status_icon = "❌" if span.get("has_error") or span.get("error") else "✅"
+        incomplete = span.get("end_time") is None
+        duration = "unfinished" if incomplete else f"{span.get('duration_ms')}ms"
+        if span.get("has_error") or span.get("error"):
+            status_icon = "❌"
+        elif incomplete:
+            status_icon = "⏳"
+        else:
+            status_icon = "✅"
 
         # Token summary inline
         metrics = span.get("metrics") or {}

@@ -9,6 +9,8 @@
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
+  <a href="#-wiring-it-into-your-agent">Wiring It In</a> •
+  <a href="#-working-with-your-traces">Working With Traces</a> •
   <a href="#-incident-investigation-cli">CLI</a> •
   <a href="#-llm-tracing">LLM Tracing</a> •
   <a href="#-configuration">Configuration</a> •
@@ -17,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/python-3.10+-brightgreen" alt="Python">
   <img src="https://img.shields.io/badge/dependencies-0_(stdlib_only)-orange" alt="Zero deps">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="License">
@@ -42,6 +44,8 @@ Like a flight recorder in an aircraft, it sits quietly in the background, sippin
 
 - **Zero external dependencies** — pure Python 3.10+ stdlib (doesn't bloat your `requirements.txt`)
 - **Never blocks your agent** — background daemon thread with `queue.Queue` handles the I/O
+- **Survives the crash it is recording** — spans hit disk the moment they *start*, and a shutdown hook drains the buffer, so a `SIGKILL`ed or OOM-killed agent still tells you where it died
+- **Silent until used** — importing the library creates no database and starts no thread; the recorder wakes up on your first traced call
 - **Automatic call hierarchy** — `contextvars` magically builds the execution tree for you (sync + async)
 - **Configurable retention** — auto-deletes traces older than 7 days, 30 days, etc.
 - **Disk protection** — hard disk cap at 300 MB, older traces get evicted so your server doesn't crash
@@ -96,6 +100,262 @@ blackbox-recorder show <TRACE_ID> -v
 
 ---
 
+## 🔌 Wiring It Into Your Agent
+
+Installing the package records nothing on its own. A useful flight recording comes from *where* you put the spans and *what* you bind to them. This is the integration playbook — follow it once per service and you never think about it again.
+
+### 1. Bootstrap once, at the process entry point
+
+```python
+# main.py — the first thing your process runs
+import os
+from blackbox_recorder import BlackBoxConfig, configure
+
+configure(BlackBoxConfig(
+    db_path=os.getenv("BLACKBOX_DB", "/var/lib/myagent/traces.db"),
+    retention="30d",
+    max_db_size_mb=300,
+    enabled=os.getenv("ENV") != "test",
+))
+```
+
+Three rules that cover every deployment:
+
+- **Call `configure()` before the first traced function *runs*.** Import order doesn't matter — decorating a function is free and touches nothing. Skip `configure()` entirely and you get `blackbox_traces.db` in the current working directory.
+- **Point `db_path` at a writable volume.** In Docker, the container's working directory is usually ephemeral: mount a volume, or your black box burns up with the container.
+- **One database per service.** Multiple processes of the *same* service can share one file safely (SQLite WAL), but two unrelated services sharing a file makes every trace list a mess.
+
+### 2. Decide what becomes a span
+
+The rule of thumb: **one span per thing that can independently fail, be slow, or be wrong.** Tracing every pure helper drowns the tree in noise and tells you nothing.
+
+| Layer in your agent | SpanKind | What to record | Question it answers at 3 AM |
+| :--- | :--- | :--- | :--- |
+| HTTP handler / bot update / queue job | `AGENT` | user message, final answer | What did the user actually ask, and what did we answer? |
+| Planner / router model call | `LLM` | system + prompt, thinking, `tool_calls`, tokens | Did the model pick the wrong tool, or hallucinate the args? |
+| Every tool, API call, DB write | `TOOL` | args, raw result | Did the tool return garbage that the model then trusted? |
+| Vector search / RAG fetch | `RETRIEVER` | query, doc IDs, scores | Did we answer confidently from the wrong context? |
+| Deterministic post-processing | `CHAIN` | in / out | Did our own code mangle a good model answer? |
+
+### 3. Put every model call behind one traced function
+
+This is the highest-value hour you'll spend. Route all LLM traffic through a single helper and prompts, completions, thinking and token counts get recorded everywhere at once — no per-call-site instrumentation, no forgotten branches.
+
+```python
+# llm.py — the only place in the codebase that talks to the model
+from blackbox_recorder import tracer, SpanKind
+
+async def call_llm(prompt: str, *, system: str = "", model: str = "gemini-2.5-flash", tools=None):
+    with tracer.span(f"llm:{model}", kind=SpanKind.LLM) as span:
+        response = await client.generate(model=model, system=system, prompt=prompt, tools=tools)
+
+        span.set_llm_io(
+            system_prompt=system,
+            prompt=prompt,
+            completion=response.text,
+            thinking=response.thinking,          # if your provider exposes it
+            tool_calls=response.tool_calls,
+            model=model,
+            prompt_tokens=response.usage.input_tokens,
+            completion_tokens=response.usage.output_tokens,
+            stop_reason=response.finish_reason,
+        )
+        return response
+```
+
+Do the same for tools — one decorator on the function, and the arguments and return value are captured automatically:
+
+```python
+@trace(kind=SpanKind.TOOL)
+def charge_customer(order_id: str, amount_cents: int) -> dict:
+    return billing_api.charge(order_id, amount_cents)
+```
+
+### 4. Bind every trace to a user and hand back the trace ID
+
+This is what turns *"a user is complaining about something that happened yesterday"* into *"here is the exact recording"*.
+
+```python
+from blackbox_recorder import set_session_id, tracer, SpanKind
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    set_session_id(req.user_id)          # every child span inherits it
+
+    with tracer.span("chat_request", kind=SpanKind.AGENT, inputs={"message": req.text}) as root:
+        answer = await agent(req.text)
+        log.info("handled chat", extra={"trace_id": root.trace_id})   # bridge to your normal logs
+        return {"answer": answer, "trace_id": root.trace_id}
+```
+
+Now `blackbox-recorder list --session <user_id>` gives you that user's history, and any trace ID appearing in your logs, error tracker or support ticket opens the full recording with `show -v`.
+
+### 5. Async, threads and workers — the one real gotcha
+
+Hierarchy is carried by `contextvars`, so it behaves differently per concurrency model:
+
+```python
+# ✅ asyncio — context propagates into tasks automatically
+async def agent(q):
+    a, b = await asyncio.gather(search(q), classify(q))   # both become children
+
+# ❌ threads — a new thread starts with an EMPTY context.
+#    The child span silently becomes its own orphan root trace.
+with ThreadPoolExecutor() as pool:
+    pool.submit(search, q)
+
+# ✅ threads — carry the context across explicitly
+import contextvars
+ctx = contextvars.copy_context()
+with ThreadPoolExecutor() as pool:
+    pool.submit(ctx.run, search, q)
+```
+
+For `multiprocessing` and separate worker processes there is no shared context at all: each process calls `configure()` itself, and either writes to the same file (WAL handles concurrent writers) or to its own. To stitch a trace across a process or queue boundary, pass the ID and re-bind it on the other side:
+
+```python
+job = {"payload": ..., "trace_id": tracer.get_trace_id()}   # producer
+...
+set_trace_id(job["trace_id"])                               # consumer, before its first span
+```
+
+### 6. Deployment checklist
+
+- [ ] `db_path` on a mounted volume, not the container's working directory
+- [ ] `retention` and `max_db_size_mb` sized to that volume — the recorder evicts oldest traces rather than filling the disk
+- [ ] `enabled=False` in unit tests and CI so test runs don't pollute the recording
+- [ ] `*.db`, `*.db-wal`, `*.db-shm` in `.gitignore` (already there in this repo)
+- [ ] the CLI is available where the DB lives — `docker exec -it myagent blackbox-recorder list`
+- [ ] nothing else to run: no collector, no sidecar, no port
+
+---
+
+## 🧭 Working With Your Traces
+
+A recording nobody reads is just disk usage. Four workflows where the tape pays for itself.
+
+### Designing a feature — start from what actually happens
+
+Before writing the prompt for a new capability, look at what users are really doing, not at what the spec assumes:
+
+```bash
+blackbox-recorder export -o corpus.jsonl        # everything, one span per line
+```
+
+```sql
+-- the top requests hitting your agent, straight from SQLite
+SELECT json_extract(inputs, '$.user_query') AS request, COUNT(*) AS n
+FROM spans WHERE kind = 'AGENT'
+GROUP BY request ORDER BY n DESC LIMIT 20;
+```
+
+That distribution tells you which branch is worth building, what the real input lengths are, and which tools already get called for the job. Instrument the *current* behaviour first, ship the feature second — otherwise you have no baseline to compare against.
+
+### Evolving the project — measure the change, don't guess
+
+Tag traces with the build or prompt version, then compare like for like:
+
+```python
+@trace(name="support_agent", kind=SpanKind.AGENT, metadata={"prompt_version": "v3"})
+async def support_agent(query: str) -> str:
+    ...
+```
+
+```sql
+-- did prompt v3 actually get cheaper and faster, or just feel that way?
+SELECT json_extract(metadata, '$.prompt_version') AS version,
+       COUNT(*)                                   AS runs,
+       ROUND(AVG(duration_ms))                    AS avg_ms,
+       ROUND(100.0 * SUM(has_error) / COUNT(*), 1) AS error_pct
+FROM spans WHERE name = 'support_agent'
+GROUP BY version;
+```
+
+The same query shape catches silent regressions after a refactor: latency drifting up, a tool quietly failing more often, token spend doubling because a prompt grew.
+
+### Evals — build the dataset out of production
+
+The best eval set is the traffic you already recorded. Pull real prompts and the completions you shipped, then use them as regression cases:
+
+```python
+from blackbox_recorder import BlackBoxConfig, TraceStorage
+
+storage = TraceStorage(BlackBoxConfig(db_path="traces.db"))
+
+cases = []
+for t in storage.list_traces(limit=500, has_error=False):
+    for span in storage.get_trace(t["trace_id"]):
+        inputs, outputs = span.get("inputs") or {}, span.get("outputs") or {}
+        if span["kind"] == "LLM" and isinstance(outputs, dict) and inputs.get("prompt"):
+            cases.append({"prompt": inputs["prompt"], "shipped": outputs.get("completion")})
+```
+
+Run the eval itself under its own session ID so it never mixes with real users:
+
+```python
+set_session_id("eval:prompt-v3")
+```
+
+```bash
+blackbox-recorder list --session eval:prompt-v3 --errors-only    # what broke in this run
+```
+
+Because every eval run is itself a set of traces, a failing case opens with `show -v` and shows the whole chain — prompt, thinking, tool calls — instead of a bare pass/fail.
+
+### Incident investigation — the 3 AM runbook
+
+```bash
+blackbox-recorder errors --limit 20              # 1. what failed recently
+blackbox-recorder show <TRACE_ID> -v             # 2. the full chain of that failure
+blackbox-recorder export --trace <TRACE_ID> -o incident.jsonl   # 3. attach to the ticket
+```
+
+Read the tree top-down and the failure usually names itself: an `LLM` span whose `🔧 Tool Call` has wrong arguments is a prompt problem; a `TOOL` span with a clean call but a junk `📤 Result` is someone else's outage; a clean tool result followed by a wrong final answer is your post-processing.
+
+**When the process died instead of erroring.** Spans are written to disk the moment they *start*, so a `SIGKILL`, an OOM kill or a hard container stop still leaves a record. Unfinished spans are marked rather than hidden:
+
+```
+📦 Trace ID: 2707d6c61ed247788fdb60edb0a6d9d3
+⏱️  Total Spans: 3
+⏳ Unfinished: 2 (still running, or the process died before they returned)
+──────────────────────────────────────────────────────────────────────
+└── ⏳ [AGENT] support_agent (unfinished)
+    ├── ✅ [LLM] classify [gemini-2.5-flash] (0.01ms) 🔤 12→3
+    └── ⏳ [TOOL] charge_api (unfinished)
+```
+
+The deepest `⏳` span is where the process was when it went down — here, inside `charge_api`, with the arguments it was called with. The same marker appears as `⏳ OPEN` in `blackbox-recorder list`. A span that is still `⏳` for a long-finished run is a hang, a kill, or a tool that never returns.
+
+### SQL cookbook
+
+The database is a plain SQLite file with one `spans` table — every question is one query away, no API, no export step.
+
+```sql
+-- token spend by model
+SELECT json_extract(metadata, '$.model') AS model,
+       COUNT(*) AS calls,
+       SUM(json_extract(metrics, '$.total_tokens')) AS tokens
+FROM spans WHERE kind = 'LLM' GROUP BY model ORDER BY tokens DESC;
+
+-- which tool is the least reliable
+SELECT name, COUNT(*) AS runs, SUM(has_error) AS failures,
+       ROUND(100.0 * SUM(has_error) / COUNT(*), 1) AS failure_pct
+FROM spans WHERE kind = 'TOOL' GROUP BY name ORDER BY failure_pct DESC;
+
+-- p95 latency of the entry point
+SELECT ROUND(duration_ms, 1) AS p95_ms FROM spans
+WHERE name = 'support_agent' AND duration_ms IS NOT NULL
+ORDER BY duration_ms
+LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.95 AS INT) FROM spans
+                WHERE name = 'support_agent' AND duration_ms IS NOT NULL);
+
+-- runs that never finished: hangs and kills
+SELECT trace_id, name, datetime(created_at, 'unixepoch') AS started
+FROM spans WHERE end_time IS NULL ORDER BY created_at DESC;
+```
+
+---
+
 ## 🔍 Incident Investigation (CLI)
 
 The CLI is your primary tool for post-incident analysis. Install the package and it's available globally.
@@ -111,7 +371,10 @@ Start Time           Status  Spans   Duration   Root Operation       Trace ID
 ─────────────────────────────────────────────────────────────────────────────────────
 2026-08-18 18:52:08  ✅ OK    4       132.7ms    support_agent        0f472b36b2a9...
 2026-08-18 18:46:17  ❌ ERR   3       59.6ms     billing_agent        61252647020244...
+2026-08-18 18:44:02  ⏳ OPEN  3       0.1ms      support_agent        2707d6c61ed247...
 ```
+
+`✅ OK` finished cleanly, `❌ ERR` raised, `⏳ OPEN` never finished — still running, or the process was killed mid-flight.
 
 ### `show` — Execution Tree
 
@@ -357,12 +620,15 @@ export_trace_to_jsonl(tracer.storage, "abc123def456", "incident_report.jsonl")
 
 ### Graceful Shutdown
 
-Always flush before your process exits to ensure all buffered spans are written:
+Buffered spans are flushed automatically when the interpreter exits, so a normal shutdown — or an unhandled exception — loses nothing. You only need these when you want to control the timing yourself:
 
 ```python
-tracer.flush()   # Wait for queue to drain
-tracer.close()   # Flush + stop worker thread
+tracer.flush()             # Wait for the queue to drain; returns False on timeout
+tracer.flush(timeout=2.0)  # Bounded wait
+tracer.close()             # Flush + stop the worker thread (idempotent)
 ```
+
+Neither survives `SIGKILL` or an OOM kill — nothing running inside the process does. That case is covered by writing spans when they start; see [Crash Durability](#crash-durability).
 
 ---
 
@@ -384,10 +650,28 @@ config = BlackBoxConfig(
     capture_inputs=True,                 # Record function arguments
     capture_outputs=True,                # Record return values
     max_field_chars=100_000,             # Truncate oversized payloads
+    record_open_spans=True,              # Write spans on start, so a hard kill still leaves a record
+    flush_timeout_seconds=5.0,           # Max wait for the buffer to drain on close() / exit
 )
 
 tracer = Tracer(config=config)
 ```
+
+To configure the *default* tracer — the one behind the bare `@trace` decorator and `tracer` object — call `configure()` at your entry point instead of building an instance:
+
+```python
+from blackbox_recorder import BlackBoxConfig, configure
+
+configure(BlackBoxConfig(db_path="/var/lib/myagent/traces.db", retention="7d"))
+```
+
+Importing the library creates no file and starts no thread; the default tracer comes up on the first traced call, so `configure()` just has to run before that.
+
+### Crash Durability
+
+`record_open_spans=True` (the default) writes every span the moment it starts, with `end_time` still empty; the finished row replaces it by `span_id` when the function returns. That costs one extra write per span and buys the thing the product is named after: if the process is killed, the recording still shows what was in flight and with which arguments.
+
+On a normal exit — including an unhandled exception — a shutdown hook drains the buffer automatically, so spans are not lost between the last call and process teardown. Set `record_open_spans=False` if you are write-bound and only care about completed spans.
 
 ### Retention Presets
 
@@ -470,6 +754,8 @@ support_tracer = Tracer(BlackBoxConfig(db_path="support_traces.db", retention="7
 
 - **`contextvars`** — Python's built-in mechanism for implicit context propagation across sync and async code. Each decorated function automatically knows its parent span without passing IDs manually.
 - **`queue.Queue` + daemon thread** — recording never blocks your agent's main loop. Spans are enqueued in nanoseconds and flushed to disk in the background.
+- **Write on start, replace on finish** — a span reaches disk before the work it describes completes, so a process that dies mid-call still leaves the tape at the right frame. `INSERT OR REPLACE` on `span_id` means the finished row overwrites the open one instead of duplicating it.
+- **Lazy default tracer** — importing the library has no side effects: the database file and worker thread are created on the first traced call, which keeps `configure()` meaningful and keeps `import` cheap in tests.
 - **SQLite WAL mode** — Write-Ahead Logging allows concurrent reads (CLI queries) while the worker thread writes. No locking contention.
 - **Zero dependencies** — the entire library uses only Python standard library modules: `contextvars`, `sqlite3`, `dataclasses`, `queue`, `threading`, `json`, `uuid`, `time`, `inspect`, `functools`, `argparse`.
 
@@ -505,6 +791,8 @@ pytest tests/ -v
 ```
 
 Tests cover: sync/async tracing, automatic hierarchy, error capture, TTL retention, 300 MB size eviction, CLI commands, JSONL export, and tree rendering.
+
+Durability is tested the only way that proves anything — by killing a real process: `tests/test_crash_recovery.py` starts an agent in a subprocess, `SIGKILL`s it mid-span, and asserts the unfinished span is still on disk with its inputs. It also asserts that importing the package creates no database, and that a process exiting without `close()` loses nothing.
 
 ---
 

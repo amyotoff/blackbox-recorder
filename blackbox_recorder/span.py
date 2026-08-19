@@ -71,6 +71,21 @@ class Span:
             metrics={},
         )
 
+    def snapshot(self) -> "Span":
+        """
+        Copy the span with independent mutable containers.
+
+        Used to hand an in-progress span to the writer thread: the caller keeps
+        mutating the original (set_metadata, set_llm_io) while the copy is
+        serialized, so the two never touch the same dict.
+        """
+        return dataclasses.replace(
+            self,
+            inputs=dict(self.inputs) if isinstance(self.inputs, dict) else self.inputs,
+            metadata=dict(self.metadata),
+            metrics=dict(self.metrics),
+        )
+
     def finish(
         self,
         output: Any = None,

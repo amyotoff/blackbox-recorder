@@ -278,6 +278,7 @@ class TraceStorage:
             ROUND((MAX(COALESCE(end_time, start_time)) - MIN(start_time)) * 1000, 2) as duration_ms,
             COUNT(span_id) as span_count,
             SUM(has_error) as error_count,
+            SUM(end_time IS NULL) as incomplete_count,
             (
                 SELECT name FROM spans s2
                 WHERE s2.trace_id = spans.trace_id AND s2.parent_span_id IS NULL
@@ -321,7 +322,8 @@ class TraceStorage:
                 COUNT(DISTINCT trace_id) as total_traces,
                 SUM(has_error) as total_errors,
                 MIN(start_time) as oldest_timestamp,
-                MAX(start_time) as newest_timestamp
+                MAX(start_time) as newest_timestamp,
+                SUM(end_time IS NULL) as total_incomplete
             FROM spans;
             """)
             row = cursor.fetchone()
@@ -333,6 +335,7 @@ class TraceStorage:
                 "total_errors": row[2] or 0,
                 "oldest_timestamp": row[3],
                 "newest_timestamp": row[4],
+                "total_incomplete": row[5] or 0,
                 "retention_days": self.config.retention_days,
                 "max_db_size_mb": self.config.max_db_size_mb,
             }
